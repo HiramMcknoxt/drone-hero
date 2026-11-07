@@ -240,15 +240,19 @@ a{color:var(--cyan)}
               <div class="statusline dim" id="fileStatus">Waiting for a file.</div>
             </div>
             <div id="srcSpotify" style="display:none">
-              <p>Spotify's own player can't be embedded with full-track audio in a static page (its Web Playback SDK needs a registered developer app + Premium token exchange). The working route in Chrome: open <a href="https://open.spotify.com" target="_blank" rel="noopener">open.spotify.com</a>, start your song, then share that tab here — the game listens to the tab audio and runs a live chart against the BPM.</p>
+              <p>Spotify's own player can't be embedded with full-track audio in a static page (its Web Playback SDK needs a registered developer app + Premium token exchange). The working route in Chrome: open <a href="https://open.spotify.com" target="_blank" rel="noopener">open.spotify.com</a>, start your song, then share that tab here — <b style="color:var(--ink)">the game listens to the tab audio and figures out the tempo itself</b>. No tapping or typing needed: share the tab, press play, give it a few seconds, and the beat pulse, phrase grid, and calls follow the detected BPM. When a new song starts it re-listens and re-anchors on its own.</p>
               <div class="row">
                 <button class="ghostbtn" id="shareTabBtn">Share Spotify tab audio…</button>
-                <label class="ck">BPM <input type="number" id="spotBpm" value="120" min="60" max="220" style="width:70px" /></label>
+                <span id="autoBpmReadout" style="font-size:13px;color:var(--cyan)">Detected tempo: — share a tab and it figures out the tempo itself</span>
+              </div>
+              <div class="row">
+                <label class="ck">Manual BPM override <input type="number" id="spotBpm" value="120" min="60" max="220" style="width:70px" /></label>
                 <button class="ghostbtn" id="tapBpmBtn">TAP BPM</button>
+                <button class="ghostbtn" id="resumeAutoBtn" style="display:none">Use auto-detected</button>
                 <span id="tapReadout" style="font-size:12px;color:var(--dim)"></span>
               </div>
-              <p style="font-size:11px">Don't know the BPM? Tap along to the beat with TAP BPM, or look the track up — the chart grid follows this number, so it's worth getting right. Live mode uses phrasing: a pulse on every beat, with calls only every 8 measures while the tab plays.</p>
-              <div class="statusline dim" id="spotStatus">Not connected. You can still fly live mode silently — but sharing the tab is the real thing.</div>
+              <p style="font-size:11px">The manual box and TAP BPM are now only an optional override — touching either pauses auto-detection until you press “Use auto-detected”. Detection needs a few seconds of clear beat; if the audio is very quiet or beatless it will say so below rather than guess. Live mode uses phrasing: a pulse on every beat, with calls only every 8 measures while the tab plays.</p>
+              <div class="statusline dim" id="spotStatus">Not connected. Share the Spotify tab and press play — tempo detection starts automatically.</div>
             </div>
           </div>
 
@@ -461,9 +465,12 @@ function phraseMeasures(diff){
   return 0; // 0 = legacy every-beat chart
 }
 function isPhraseDiff(diff){ return phraseMeasures(diff)>0; }
+var spotAutoBPM=0, spotAutoConf=0, spotManualOverride=false, spotChartBpm=0;
+var spotPhaseAligned=false; // true only while spotStartCtx sits ON a detected beat
+function manualSpotBpm(){ return clamp(parseInt($('spotBpm').value,10)||120,40,260); }
 function currentBpm(){
   if(musicMode==='demo') return DEMO_BPM;
-  if(musicMode==='spotify') return clamp(parseInt($('spotBpm').value,10)||120,40,260);
+  if(musicMode==='spotify') return (!spotManualOverride && spotAutoBPM>0) ? spotAutoBPM : manualSpotBpm();
   return fileBPM||120;
 }
 function makePhraseNotes(opts){
@@ -644,6 +651,220 @@ function analyseBuffer(buf, diff){
    SPOTIFY LIVE MODE (tab audio share)
    ===================================================================== */
 var tapTimes=[];
+/* =====================================================================
+   LIVE TEMPO DETECTION — Spotify / shared tab audio
+   The captured tab audio is buffered into a rolling PCM window. Every
+   few seconds the SAME onset + inter-onset-interval BPM estimation the
+   uploaded-file analysis uses (analyseBuffer) runs over that window:
+   energy-flux onset peaks, then a histogram of onset intervals folded
+   into 0.28–1.1 s. The detected BPM drives currentBpm() — and therefore
+   the beat pulse, the phrase grid, and chart generation — with no
+   tapping or typing. A sustained silence followed by new onsets, or a
+   large stable tempo shift, is treated as a new song: the buffer is
+   cleared, tempo is re-estimated, and the grid is re-anchored to a
+   detected onset. Low-confidence windows (very quiet / beatless audio)
+   are reported in the status line instead of silently picking a grid:
+   after a few failed passes it reads "tempo not detected — tap or type
+   to set it". PHASE: the live grid is anchored to a detected onset, not
+   to the moment ARM was pressed — spotStartCtx takes the context time
+   of a real beat (spotPhaseAligned), the first confident lock after an
+   early ARM re-anchors the grid even if the BPM didn't change, and
+   later estimates nudge the origin by at most half a beat to hold the
+   pulse on the song's beats. Pause/resume re-derives an on-beat origin.
+   ===================================================================== */
+var liveTempo={
+  proc:null, silentGain:null, chunks:[], samples:0, maxSamples:0,
+  bufferStartCtx:0, started:false, lastEstimateAt:0, estimates:[],
+  silentSince:0, inSilence:true, anchorCtx:0, pendingNewSong:false,
+  lastRms:0, heardSound:false, failedEstimates:0
+};
+function liveTempoResetBuffer(nowCtx){
+  liveTempo.chunks=[]; liveTempo.samples=0;
+  liveTempo.bufferStartCtx=nowCtx|| (AC?AC.currentTime:0);
+  liveTempo.estimates=[]; liveTempo.lastEstimateAt=0;
+  liveTempo.failedEstimates=0;
+}
+function liveTempoFlatten(){
+  var out=new Float32Array(liveTempo.samples), off=0;
+  for(var i=0;i<liveTempo.chunks.length;i++){ out.set(liveTempo.chunks[i],off); off+=liveTempo.chunks[i].length; }
+  return out;
+}
+/* Onset/BPM estimation over a PCM window — mirrors analyseBuffer. */
+function estimateBpmFromPcm(data, sr){
+  var hop=1024, frameLen=2048, frames=Math.floor((data.length-frameLen)/hop);
+  if(frames<40) return null;
+  var flux=new Float32Array(frames), prevLow=0, f, j;
+  for(f=0;f<frames;f++){
+    var off=f*hop, low=0;
+    for(j=0;j<frameLen;j+=8){ low+=Math.abs(data[off+j]); }
+    var l=low/(frameLen/8); flux[f]=Math.max(0,l-prevLow); prevLow=l;
+  }
+  var fps=sr/hop, mean=0;
+  for(f=0;f<frames;f++) mean+=flux[f]; mean/=frames;
+  if(!(mean>0.0004)) return {bpm:0, confidence:0, onsets:0, anchorOffset:0}; // near-silent window
+  var thresh=mean*1.6, win=Math.round(0.09*fps), onsets=[];
+  for(var p=win;p<frames-win;p++){
+    if(flux[p]<thresh) continue; var isMax=true;
+    for(var q=-win;q<=win;q++){ if(flux[p+q]>flux[p]){isMax=false;break;} }
+    if(isMax){ onsets.push(p/fps); p+=Math.round(0.21*fps); }
+  }
+  if(onsets.length<6) return {bpm:0, confidence:0, onsets:onsets.length, anchorOffset:onsets.length?onsets[0]:0};
+  var hist={}, bestLag=0, bestCount=0, totalIv=0;
+  for(var oi=1;oi<onsets.length;oi++){
+    var iv=onsets[oi]-onsets[oi-1];
+    while(iv<0.28) iv*=2; while(iv>1.1) iv/=2;
+    var key=Math.round(iv*50)/50; hist[key]=(hist[key]||0)+1; totalIv++;
+    if(hist[key]>bestCount){bestCount=hist[key];bestLag=key;}
+  }
+  if(!bestLag) return {bpm:0, confidence:0, onsets:onsets.length, anchorOffset:onsets[0]};
+  // Anchor: the onset nearest an integer number of beats before the
+  // latest onset — any on-beat onset aligns the phrase grid's phase.
+  var spbEst=bestLag, latest=onsets[onsets.length-1], anchor=onsets[0];
+  for(var a=onsets.length-1;a>=0;a--){ if(Math.abs((latest-onsets[a])%spbEst)<0.06 || a===0){ anchor=onsets[a]; if(a<onsets.length-1) break; } }
+  return { bpm:Math.round(60/bestLag), confidence: totalIv? bestCount/totalIv : 0, onsets:onsets.length, anchorOffset:anchor };
+}
+function autoBpmSay(txt){ var el=$('autoBpmReadout'); if(el) el.textContent=txt; }
+function spotStatusSay(txt, cls){ var el=$('spotStatus'); if(el){ el.textContent=txt; el.className='statusline '+(cls||'dim'); } }
+function startLiveTempoDetection(){
+  stopLiveTempoDetection();
+  liveTempo.maxSamples=(AC?AC.sampleRate:48000)*40; // rolling ~40 s window
+  liveTempoResetBuffer(AC.currentTime);
+  liveTempo.started=true; liveTempo.inSilence=true; liveTempo.silentSince=0;
+  liveTempo.pendingNewSong=false; liveTempo.heardSound=false;
+  spotAutoBPM=0; spotAutoConf=0; spotPhaseAligned=false;
+  autoBpmSay('Detecting tempo… play the song and give it a few seconds');
+  spotStatusSay('Tab audio connected ✓ — listening… tempo detection is running; just press play in Spotify.', 'ok');
+  try{
+    var proc=AC.createScriptProcessor(4096,1,1);
+    var silent=AC.createGain(); silent.gain.value=0; // run the processor without echoing the tab back out
+    proc.onaudioprocess=function(e){
+      if(!liveTempo.started) return;
+      var input=e.inputBuffer.getChannelData(0), copy=new Float32Array(input.length);
+      copy.set(input);
+      var sum=0; for(var i=0;i<copy.length;i+=4) sum+=copy[i]*copy[i];
+      var rms=Math.sqrt(sum/Math.max(1,copy.length/4)); liveTempo.lastRms=rms;
+      var now=AC.currentTime;
+      // --- new-song detection: sustained quiet, then sound again ---
+      if(rms<0.008){
+        if(!liveTempo.silentSince) liveTempo.silentSince=now;
+        if(now-liveTempo.silentSince>2.5) liveTempo.inSilence=true;
+      } else if(rms>0.02){
+        if(liveTempo.inSilence && liveTempo.heardSound){
+          // Silence ended and music is back: this is a new song.
+          liveTempo.pendingNewSong=true; liveTempo.anchorCtx=now;
+          liveTempoResetBuffer(now); spotAutoBPM=0; spotAutoConf=0;
+          spotPhaseAligned=false; tapTimes=[]; // new song: old taps belong to the old tempo
+          autoBpmSay('New song — detecting tempo…');
+          spotStatusSay('New song detected (silence, then music) — re-estimating tempo and re-anchoring the grid…', 'dim');
+        }
+        liveTempo.inSilence=false; liveTempo.silentSince=0; liveTempo.heardSound=true;
+      }
+      if(liveTempo.samples===0) liveTempo.bufferStartCtx=now - copy.length/AC.sampleRate;
+      liveTempo.chunks.push(copy); liveTempo.samples+=copy.length;
+      while(liveTempo.samples>liveTempo.maxSamples && liveTempo.chunks.length>1){
+        var dropped=liveTempo.chunks.shift(); liveTempo.samples-=dropped.length;
+        liveTempo.bufferStartCtx+=dropped.length/AC.sampleRate;
+      }
+    };
+    spotSource.connect(proc); proc.connect(silent); silent.connect(AC.destination);
+    liveTempo.proc=proc; liveTempo.silentGain=silent;
+  }catch(err){
+    // ScriptProcessor unavailable: fall back to analyser-driven polling
+    // in tickLiveTempo (energy history instead of raw PCM).
+    liveTempo.proc=null;
+    spotStatusSay('Listening via level meter (PCM capture unavailable) — tempo detection may be slower.', 'dim');
+  }
+}
+function stopLiveTempoDetection(){
+  liveTempo.started=false;
+  if(liveTempo.proc){ try{ liveTempo.proc.disconnect(); }catch(e){} liveTempo.proc=null; }
+  if(liveTempo.silentGain){ try{ liveTempo.silentGain.disconnect(); }catch(e){} liveTempo.silentGain=null; }
+}
+/* Rebuild the live chart around a (possibly new) BPM + beat anchor. */
+function reanchorSpotifyChart(bpm, anchorCtx, isNewSong){
+  spotChartBpm=bpm;
+  if(anchorCtx && anchorCtx>0){ spotStartCtx=anchorCtx; spotPhaseAligned=true; }
+  chart=spotifyChart(bpm);
+  chartSourceName='Spotify live — auto tempo ~'+bpm+' BPM'+(isNewSong?' · new song':'');
+  if(state==='fly' && withChart){
+    // Don't replay calls that are already in the past on the new grid.
+    var nowT=songTime();
+    chart.forEach(function(n){ if(n.t < nowT-0.1) n.judged=true; });
+  }
+}
+function tickLiveTempo(){
+  if(!liveTempo.started || !AC || spotManualOverride) return;
+  var now=AC.currentTime;
+  if(!liveTempo.proc && spotAnalyser){
+    // Fallback capture path: sample the analyser's time-domain buffer.
+    if(!liveTempo._fbAt || now-liveTempo._fbAt>0.09){
+      liveTempo._fbAt=now;
+      var fb=new Float32Array(spotAnalyser.fftSize); spotAnalyser.getFloatTimeDomainData(fb);
+      if(liveTempo.samples===0) liveTempo.bufferStartCtx=now-fb.length/AC.sampleRate;
+      liveTempo.chunks.push(new Float32Array(fb)); liveTempo.samples+=fb.length; liveTempo.heardSound=true; liveTempo.inSilence=false;
+      while(liveTempo.samples>liveTempo.maxSamples && liveTempo.chunks.length>1){ var dr=liveTempo.chunks.shift(); liveTempo.samples-=dr.length; liveTempo.bufferStartCtx+=dr.length/AC.sampleRate; }
+    }
+  }
+  var bufferedSec=liveTempo.samples/(AC.sampleRate||48000);
+  if(bufferedSec<6) {
+    if(liveTempo.heardSound) autoBpmSay('Detecting tempo… '+bufferedSec.toFixed(0)+'s of audio so far');
+    return;
+  }
+  if(now-liveTempo.lastEstimateAt<2.5) return;
+  liveTempo.lastEstimateAt=now;
+  var est=estimateBpmFromPcm(liveTempoFlatten(), AC.sampleRate);
+  if(!est || est.bpm<=0 || est.confidence<0.22 || est.onsets<6){
+    // Low confidence: never fail silently onto a default grid. After a
+    // few failed passes over real audio, the status line says plainly
+    // that no tempo was detected and to tap or type one instead.
+    liveTempo.failedEstimates++;
+    if(spotAutoBPM<=0 && !spotManualOverride && liveTempo.failedEstimates>=3){
+      autoBpmSay('No tempo detected yet');
+      spotStatusSay('tempo not detected — tap or type to set it. Detection keeps listening in the background and locks on automatically if a clear beat emerges.', 'err');
+    } else {
+      autoBpmSay('Detecting tempo… no clear beat found yet');
+      spotStatusSay('Listening… no clear beat detected yet — the audio may be very quiet or beatless. Keep it playing (detection keeps refining), or set a manual BPM override.', 'dim');
+    }
+    return;
+  }
+  liveTempo.failedEstimates=0;
+  // Stabilise: median of the last few confident estimates.
+  liveTempo.estimates.push(est.bpm); if(liveTempo.estimates.length>5) liveTempo.estimates.shift();
+  var sorted=liveTempo.estimates.slice().sort(function(a,b){return a-b;});
+  var median=sorted[Math.floor(sorted.length/2)];
+  var wasNewSong=liveTempo.pendingNewSong; liveTempo.pendingNewSong=false;
+  var anchorCtx=liveTempo.bufferStartCtx + (est.anchorOffset||0);
+  if(est.anchorOffset!==undefined) liveTempo.anchorCtx=anchorCtx;
+  var prevBpm=spotAutoBPM;
+  spotAutoBPM=median; spotAutoConf=est.confidence;
+  autoBpmSay('Detected ≈'+median+' BPM'+(liveTempo.estimates.length<3?' (still refining…)':''));
+  spotStatusSay('Tab audio connected ✓ — detected ≈'+median+' BPM from the music itself, beat-aligned. ARM & FLY when ready, or override manually.', 'ok');
+  // Large, stable tempo change while flying = treat like a new song.
+  var tempoJump = prevBpm>0 && Math.abs(median-prevBpm)>=6 && liveTempo.estimates.length>=3;
+  if(state==='fly' && withChart && musicMode==='spotify' && spotChartBpm>0){
+    if(wasNewSong || tempoJump || Math.abs(median-spotChartBpm)>=3 || !spotPhaseAligned){
+      // (Re)build the grid ON the detected beat: spotStartCtx becomes the
+      // context time of a real detected onset, so the pulse and the calls
+      // land on the song's actual beats — not on whenever ARM was pressed.
+      // This also fires on the first confident lock after an ARM that
+      // happened before detection finished (!spotPhaseAligned), even when
+      // the BPM itself didn't change.
+      var firstAlign=!spotPhaseAligned && !wasNewSong && !tempoJump && Math.abs(median-spotChartBpm)<3;
+      reanchorSpotifyChart(median, anchorCtx, wasNewSong||tempoJump);
+      spotStatusSay((wasNewSong||tempoJump)? 'New song / tempo change — grid re-anchored on the beat at ≈'+median+' BPM.'
+        : firstAlign? 'Beat found — pulse and calls are now phase-aligned to the song at ≈'+median+' BPM.'
+        : 'Tempo refined — grid now ≈'+median+' BPM, beat-aligned.', 'ok');
+    } else {
+      // Tempo unchanged and already aligned: keep the phase honest with a
+      // small nudge of the grid origin onto the nearest detected beat
+      // (never more than half a beat), so slow estimate drift can't walk
+      // the pulse off the song's real beats.
+      var spbNow=60/median, dAnchor=anchorCtx-spotStartCtx;
+      var phaseErr=dAnchor - Math.round(dAnchor/spbNow)*spbNow;
+      if(Math.abs(phaseErr)>0.05) spotStartCtx+=phaseErr;
+    }
+  }
+}
 function setupSpotifyShare(){
   ensureAudio();
   if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia){
@@ -655,13 +876,14 @@ function setupSpotifyShare(){
     spotStream=stream;
     spotSource=AC.createMediaStreamSource(new MediaStream(aTracks));
     spotAnalyser=AC.createAnalyser(); spotAnalyser.fftSize=2048; spotSource.connect(spotAnalyser);
-    $('spotStatus').textContent='Tab audio connected ✓ — start the song in Spotify, set its BPM, then ARM & FLY.'; $('spotStatus').className='statusline ok';
     songReady=true; chartSourceName='Spotify (live tab)';
-    aTracks[0].onended=function(){ $('spotStatus').textContent='Tab share ended.'; $('spotStatus').className='statusline err'; };
+    startLiveTempoDetection(); // tempo is figured out by listening — automatic from here
+    aTracks[0].onended=function(){ stopLiveTempoDetection(); $('spotStatus').textContent='Tab share ended — tempo detection stopped.'; $('spotStatus').className='statusline err'; autoBpmSay('Tempo detection stopped — tab share ended'); };
   }).catch(function(e){ $('spotStatus').textContent='Share cancelled: '+e.message; $('spotStatus').className='statusline err'; });
 }
 function spotifyChart(bpm){
   // Live mode follows the same phrasing: one call every 8 measures.
+  spotChartBpm=bpm;
   var spb=60/bpm, dur=400*spb;
   return makePhraseNotes({bpm:bpm, duration:dur, measures:8, seed:31, intensityAt:function(){ return 0.5; }});
 }
@@ -1566,9 +1788,9 @@ function prepareChartForMode(){
     return chart.length>0;
   }
   if(musicMode==='spotify'){
-    var bpm=clamp(parseInt($('spotBpm').value,10)||120,40,260);
+    var bpm=currentBpm();
     chart=spotifyChart(bpm);
-    chartSourceName='Spotify live ('+bpm+' BPM grid)';
+    chartSourceName= spotManualOverride ? 'Spotify live ('+bpm+' BPM · manual override)' : (spotAutoBPM>0 ? 'Spotify live — detected ≈'+bpm+' BPM' : 'Spotify live · tempo not detected — grid on typed BPM until detection locks');
     return true;
   }
   return false;
@@ -1591,7 +1813,20 @@ function startFlight(chartMode){
   if(withChart){
     if(musicMode==='demo'){ demoPausedAt=0; demoStart(0); }
     else if(musicMode==='file'){ fileAudio.currentTime=0; fileAudio.play(); }
-    else if(musicMode==='spotify'){ spotStartCtx=AC.currentTime; spotLive=true; }
+    else if(musicMode==='spotify'){
+      // Phase: if detection has already found the beat, the grid starts ON
+      // a detected onset (the same idea as file mode's first-onset anchor),
+      // so the pulse lands on the song's beats from the first measure. If
+      // detection hasn't locked yet, the grid starts at ARM for now and
+      // tickLiveTempo phase-aligns it the moment a confident tempo lands
+      // (spotPhaseAligned stays false until the grid sits on a real beat).
+      var haveAnchor=(!spotManualOverride && spotAutoBPM>0 && liveTempo.anchorCtx>0);
+      spotStartCtx= haveAnchor ? liveTempo.anchorCtx : AC.currentTime;
+      spotPhaseAligned=haveAnchor;
+      spotLive=true;
+      var nowT0=songTime();
+      chart.forEach(function(n){ if(n.t<nowT0-0.1) n.judged=true; }); // calls already behind the anchor beat aren't owed to anyone
+    }
   }
   showCenter('ARMED','Throttle up with W — first gates are dead ahead');
   setTimeout(function(){ if(state==='fly') hideCenter(); },1600);
@@ -1621,7 +1856,17 @@ function resumeGame(){
   if(withChart){
     if(musicMode==='demo') demoStart(demoPausedAt);
     else if(musicMode==='file'&&fileAudio) fileAudio.play();
-    else if(musicMode==='spotify'){ spotStartCtx=AC.currentTime-pausedSongOffset; }
+    else if(musicMode==='spotify'){
+      // Resume on the same song position AND the same beat phase: pick the
+      // grid origin nearest the plain resume point that still sits on a
+      // detected beat, so pausing doesn't knock the pulse off the song.
+      var baseResume=AC.currentTime-pausedSongOffset;
+      if(!spotManualOverride && spotAutoBPM>0 && liveTempo.anchorCtx>0){
+        var spbR=60/spotAutoBPM;
+        spotStartCtx=liveTempo.anchorCtx - Math.round((liveTempo.anchorCtx-baseResume)/spbR)*spbR;
+        spotPhaseAligned=true;
+      } else spotStartCtx=baseResume;
+    }
   }
   $('pauseBtn').textContent='❚❚ Pause';
 }
@@ -1718,7 +1963,7 @@ function updateOSD(){
   if(radio.connected) modeTxt+=' · RC';
   $('osdTL').innerHTML =
     '<span class="'+(drone.crashed?'r':drone.armed?'g':'a')+'">'+modeTxt+'</span>  ·  '+(withChart? chartSourceName : 'FREE FLY')+'\n'+
-    'TIME <span class="c">'+fmtT(songTime())+'</span>'+(songDur()!==Infinity?' / '+fmtT(songDur()):'')+'   BPM <span class="c">'+(musicMode==='demo'?DEMO_BPM:musicMode==='spotify'?($('spotBpm').value||120):(fileBPM||'—'))+'</span>';
+    'TIME <span class="c">'+fmtT(songTime())+'</span>'+(songDur()!==Infinity?' / '+fmtT(songDur()):'')+'   BPM <span class="c">'+(musicMode==='demo'?DEMO_BPM:musicMode==='spotify'?(spotManualOverride?currentBpm():(spotAutoBPM>0?'~'+currentBpm():'listening…')):(fileBPM||'—'))+'</span>';
   var batColor = drone.battery<20?'r':drone.battery<45?'a':'g';
   $('osdBL').innerHTML =
     'THR <span class="a">'+thrBar+'</span> '+Math.round(drone.throttle*100)+'%\n'+
@@ -1749,7 +1994,7 @@ function loop(nowMs){
     if(musicMode==='spotify' && withChart && state==='fly' && chart.length){
       var lastN=chart[chart.length-1];
       if(songTime() > lastN.t - 20){ // extend the phrase grid ahead of the song
-        var bpmS=clamp(parseInt($('spotBpm').value,10)||120,40,260), spbS=60/bpmS;
+        var bpmS=currentBpm(), spbS=60/bpmS;
         var seqS=['right','back','left','front','front','left','back','right'];
         var baseBeat=Math.round(lastN.t/spbS);
         for(var si=1;si<=4;si++){ var bt=baseBeat+si*32; chart.push({t:bt*spbS, dir:seqS[(chart.length+si)%seqS.length], judged:false, combo:false}); }
@@ -1759,6 +2004,7 @@ function loop(nowMs){
   }
   if(renderer){ renderer.render(scene,camera); }
   sampleCalibration(); tickRadioUI(nowMs);
+  if(typeof tickLiveTempo==='function') tickLiveTempo();
   tickPulse();
   drawLane(); updateOSD();
 }
@@ -1801,10 +2047,33 @@ $('fileDiff').addEventListener('change',function(){
     $('fileStatus').textContent='Chart rebuilt: '+res.notes.length+' calls at ≈'+res.bpm+' BPM.'; $('fileStatus').className='statusline ok'; }
 });
 $('shareTabBtn').addEventListener('click',setupSpotifyShare);
+function setManualOverride(readout){
+  spotManualOverride=true;
+  $('resumeAutoBtn').style.display='';
+  if(readout) $('tapReadout').textContent=readout;
+  autoBpmSay('Manual override '+manualSpotBpm()+' BPM — auto detection paused (press “Use auto-detected” to resume)');
+  if(musicMode==='spotify' && state==='fly' && withChart) reanchorSpotifyChart(manualSpotBpm(), AC?AC.currentTime:0, false);
+  spotPhaseAligned=false; // a hand-set grid has no detected beat phase
+}
+$('spotBpm').addEventListener('input',function(){ tapTimes=[]; setManualOverride('Manual override: '+manualSpotBpm()+' BPM'); });
+$('resumeAutoBtn').addEventListener('click',function(){
+  spotManualOverride=false; this.style.display='none'; $('tapReadout').textContent='';
+  liveTempo.lastEstimateAt=0; liveTempo.estimates=[];
+  autoBpmSay(spotAutoBPM>0 ? 'Detected ≈'+spotAutoBPM+' BPM' : 'Detecting tempo… listening');
+  spotStatusSay(spotAutoBPM>0 ? 'Back to auto-detected tempo ≈'+spotAutoBPM+' BPM.' : 'Back to auto detection — listening…', 'ok');
+  if(musicMode==='spotify' && state==='fly' && withChart && spotAutoBPM>0) reanchorSpotifyChart(spotAutoBPM, liveTempo.anchorCtx, false);
+});
 $('tapBpmBtn').addEventListener('click',function(){
-  var now=performance.now(); tapTimes.push(now); if(tapTimes.length>8) tapTimes.shift();
+  var now=performance.now();
+  // A gap of more than 2 s between taps starts a NEW tap sequence — a new
+  // song or a fresh tempo. The old taps are discarded, never averaged in:
+  // blending the previous song's taps into the new window was how a tapped
+  // tempo used to land between two songs and match neither.
+  if(tapTimes.length && now-tapTimes[tapTimes.length-1]>2000) tapTimes=[];
+  tapTimes.push(now); if(tapTimes.length>6) tapTimes.shift();
   if(tapTimes.length>2){ var iv=(tapTimes[tapTimes.length-1]-tapTimes[0])/(tapTimes.length-1);
-    var bpm=Math.round(60000/iv); $('spotBpm').value=bpm; $('tapReadout').textContent='≈ '+bpm+' BPM'; }
+    var bpm=Math.round(60000/iv); $('spotBpm').value=bpm; setManualOverride('≈ '+bpm+' BPM (manual tap override)'); }
+  else setManualOverride('Tap a few more times… (manual override)');
 });
 $('envSelect').addEventListener('change',function(){ buildCourse(this.value); });
 /* splat wiring */
