@@ -1293,7 +1293,18 @@ function detectPreset(id){
   if(s.indexOf('radiomaster')>=0||s.indexOf('radio master')>=0||s.indexOf('pocket')>=0||s.indexOf('frsky')>=0||s.indexOf('opentx')>=0||s.indexOf('edgetx')>=0||s.indexOf('jumper')>=0||s.indexOf('betafpv')>=0) return 'rm';
   return 'generic';
 }
+function isRadioLike(id){
+  return /dji|radiomaster|edgetx|frsky|jumper|betafpv|taranis|tx16|pocket/i.test(id||'');
+}
 function onRadioSeen(gp){
+  /* A plain gamepad (an Xbox controller, say) connecting after the radio
+     must not steal the radio slot: while the latched device is a radio and
+     is still present, a non-radio device seen here is ignored. */
+  if(!isRadioLike(gp.id) && isRadioLike(radio.id) && radio.index>=0 && radio.index!==gp.index){
+    var slots=navigator.getGamepads?navigator.getGamepads():[];
+    var latched=slots[radio.index];
+    if(latched && latched.id===radio.id) return;
+  }
   var changed = (!radio.connected || radio.id!==gp.id);
   radio.connected=true; radio.id=gp.id; radio.index=gp.index;
   if(changed){ radio.touched=false; radio.firstAxes=null; }
@@ -1303,7 +1314,13 @@ function onRadioSeen(gp){
 function currentGamepad(){
   var gps=navigator.getGamepads?navigator.getGamepads():[];
   if(radio.index>=0 && gps[radio.index]) return gps[radio.index];
-  for(var i=0;i<gps.length;i++){ if(gps[i]){ onRadioSeen(gps[i]); return gps[i]; } }
+  var firstAny=null;
+  for(var i=0;i<gps.length;i++){
+    if(!gps[i]) continue;
+    if(isRadioLike(gps[i].id)){ onRadioSeen(gps[i]); return gps[i]; } // a real radio outranks slot order
+    if(!firstAny) firstAny=gps[i];
+  }
+  if(firstAny){ onRadioSeen(firstAny); return firstAny; }
   if(radio.connected){ radio.connected=false; radio.index=-1; updateRadioStatus(); }
   return null;
 }
@@ -1423,6 +1440,7 @@ function syncMapUI(){
    setup existed before; calibration never touches keyboard input. */
 var cal={active:false, phase:'', fnIdx:0, snap:null, lastSnap:null, stableSince:0,
          usedAxes:{}, backup:null, liveAt:0, settleSince:0, subCache:''};
+var calTimer=null; // interval that also drives sampleCalibration while the wizard runs
 var CAL_ORDER=['pitch','roll','thr','yaw'];
 var CAL_PROMPT={
   pitch:'Push it fully FORWARD (away from you) and hold it there.',
@@ -1445,6 +1463,12 @@ function startCalibration(){
   calStatusSay('','dim');
   if(currentGamepad()) beginRest(); else beginWait();
   $('calWizard').scrollIntoView({block:'nearest'});
+  /* Also sample from a timer, not only from the render loop: if this page's
+     frame rate sags (big scene, busy tab) the render-loop samples alone can
+     land too sparsely to ever catch a stick deflection. Every phase change
+     inside sampleCalibration is synchronous (rest→assign→settle→next), so a
+     second driver can never double-capture a step. */
+  if(calTimer===null) calTimer=setInterval(sampleCalibration,30);
 }
 function calChrome(){ // progress line + which buttons belong to this phase
   var prog=$('calProgress'), act=$('calActionBtn'), skip=$('calSkipBtn');
@@ -1511,6 +1535,7 @@ function skipAssign(){
 }
 function endWizard(){
   cal.active=false; cal.phase='';
+  if(calTimer!==null){ clearInterval(calTimer); calTimer=null; } // every exit path funnels through here
   $('calWizard').style.display='none';
   $('calBtn').disabled=false; $('calBtn').textContent='CALIBRATE RADIO';
 }
@@ -1565,7 +1590,7 @@ function sampleCalibration(){
       if(d>anyDev){ anyDev=d; anyAxis=i; }
       if(!cal.usedAxes.hasOwnProperty(i) && d>bestDev){ bestDev=d; bestAxis=i; }
     }
-    if(bestAxis>=0 && bestDev>0.6){ captureAssignAxis(bestAxis, gp.axes[bestAxis]); return; }
+    if(bestAxis>=0 && bestDev>0.45){ captureAssignAxis(bestAxis, gp.axes[bestAxis]); return; } // some USB radios report less than full ±1 travel
     if(anyAxis>=0 && anyDev>0.6 && cal.usedAxes.hasOwnProperty(anyAxis)){
       calSubSay('That movement is axis '+anyAxis+', already assigned to '+FN_LONG[cal.usedAxes[anyAxis]]+' — move a different stick for '+FN_LONG[CAL_ORDER[cal.fnIdx]]+'.');
     }
