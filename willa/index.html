@@ -949,6 +949,7 @@ var renderer, scene, camera, worldGroup=null, gateList=[], splatObj=null, splatN
    hosted copy (expires 2026-11-09T06:51:38Z); WILLA_LOCAL is the identical
    file bundled with this fork, tried if the hosted link can't be read. */
 var willaLoaded=false, willaSource='';
+var splatIsWilla=false, splatFlipH=0, splatGrid=null; // Willa-only flip state (see applySplatTransform)
 var WILLA_URL='https://muse.ai/files/678388725354587/1439900574254971/kqo48ih5x2cyn86l3l4qfxok/willa.splat';
 var WILLA_PART_COUNT=24, WILLA_PART_BYTES=2000000, WILLA_TOTAL_BYTES=48000000; // bundled copy, chunked (see willaFetchBundled)
 var WILLA_SPAWN={x:0, y:15, z:44}; // above the scene's vertical middle (~27 tall once grounded), south edge, nose across it
@@ -1045,26 +1046,54 @@ function clearSplat(){
   var wasWilla=willaLoaded;
   if(splatObj){ scene.remove(splatObj); splatObj.geometry.dispose(); splatObj=null; splatName=''; }
   willaLoaded=false; willaSource='';
+  splatIsWilla=false; splatFlipH=0; splatGrid=null;
   if(renderer) renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
   $('clearSplatBtn').style.display='none'; updateEnvChip();
   if(worldGroup) worldGroup.visible=true;
   if(wasWilla && state==='menu') resetDrone(); // back on the launch pad for the built-in courses
 }
-function installSplat(points, name){
+function installSplat(points, name, isWilla){
   clearSplat();
   splatObj=points; splatName=name; scene.add(splatObj);
+  // Willa only: the Postshot export uses COLMAP-style Y-down/Z-forward axes,
+  // so the scene renders upside-down in this Y-up world. Record the parsed
+  // height now (positions are grounded at min-Y = 0 by parseSplat) so
+  // applySplatTransform can rotate it right-side up and re-ground it.
+  splatIsWilla=!!isWilla;
+  if(splatIsWilla){
+    points.geometry.computeBoundingBox();
+    var bb=points.geometry.boundingBox;
+    splatFlipH=bb.max.y-bb.min.y;
+  }
   if(worldGroup) worldGroup.visible=false;
   // keep an invisible-ish ground grid for orientation reference
   var grid=new THREE.GridHelper(400,40,0x2ee6c8,0x2ee6c8);
   grid.material.opacity=0.10; grid.material.transparent=true; grid.position.y=0.02;
+  splatGrid=grid;
   splatObj.add(grid);
   $('clearSplatBtn').style.display=''; applySplatTransform(); updateEnvChip();
 }
 function applySplatTransform(){
   if(!splatObj) return;
   var s=parseFloat($('splatScale').value);
+  var yOff=parseFloat($('splatY').value);
   splatObj.scale.set(s,s,s);
-  splatObj.position.y=parseFloat($('splatY').value);
+  if(splatIsWilla){
+    // 180° about X: negates Y and Z, turning the Y-down export right-side up.
+    // (This build renders splats as an isotropic point cloud — positions,
+    // colors, and a scalar size only; no per-gaussian orientation is kept,
+    // so the object-level rotation is the complete transform.) Rotation maps
+    // local Y [0..H] to [-H..0], so lift by H*s to put the yard's ground back
+    // at the y=0 ground plane, and counter-place the child grid so it stays
+    // on that same ground instead of riding to the top of the scene.
+    splatObj.rotation.x=Math.PI;
+    splatObj.position.y=splatFlipH*s+yOff;
+    if(splatGrid) splatGrid.position.y=splatFlipH-0.02/Math.max(s,0.001);
+  } else {
+    splatObj.rotation.x=0;
+    splatObj.position.y=yOff;
+    if(splatGrid) splatGrid.position.y=0.02;
+  }
   $('splatScaleVal').textContent=s.toFixed(1)+'×';
   $('splatYVal').textContent=$('splatY').value+' m';
 }
@@ -1079,7 +1108,7 @@ function loadSplatBuffer(buf, name){
       var pts = isPly? parsePly(buf) : parseSplat(buf);
       var isWilla=/^willa\.splat$/i.test(name);
       var srcNote=willaSource; // capture now: installSplat->clearSplat resets it
-      installSplat(pts, isWilla? 'Willa — willa.splat' : name);
+      installSplat(pts, isWilla? 'Willa — willa.splat' : name, isWilla);
       var count=pts.geometry.attributes.position.count;
       if(isWilla){
         willaLoaded=true;
