@@ -43,7 +43,9 @@ button{font-family:var(--mono);cursor:pointer}
 #osdBR{right:14px;bottom:12px;text-align:right;color:#eaf6ee}
 #osdTL{left:14px;top:12px;color:#eaf6ee;max-width:44%}
 .osd .a{color:var(--amber)} .osd .c{color:var(--cyan)} .osd .r{color:var(--red)} .osd .g{color:var(--green)}
-#envChip{position:absolute;top:104px;left:50%;transform:translateX(-50%);z-index:6;background:rgba(7,10,12,.72);border:1px solid var(--line2);border-radius:20px;padding:4px 13px;font-size:11px;color:var(--dim);pointer-events:none;white-space:nowrap;max-width:94%;overflow:hidden;text-overflow:ellipsis}
+#beatPulse{position:absolute;top:102px;left:50%;transform:translateX(-50%);z-index:6;width:14px;height:14px;border-radius:50%;border:2px solid var(--amber);opacity:.25;pointer-events:none;transition:transform .08s,opacity .08s,background .08s}
+#beatPulse.down{border-color:#fff;background:var(--amber)}
+#envChip{position:absolute;top:124px;left:50%;transform:translateX(-50%);z-index:6;background:rgba(7,10,12,.72);border:1px solid var(--line2);border-radius:20px;padding:4px 13px;font-size:11px;color:var(--dim);pointer-events:none;white-space:nowrap;max-width:94%;overflow:hidden;text-overflow:ellipsis}
 #envChip b{color:var(--cyan);font-weight:600}
 #nowPrompt{position:absolute;left:50%;top:21%;transform:translateX(-50%);z-index:8;text-align:center;pointer-events:none;opacity:0;transition:opacity .12s}
 #nowPrompt .arr{font-size:64px;line-height:1;color:var(--amber);text-shadow:0 0 22px rgba(255,176,0,.65),0 2px 6px #000}
@@ -190,6 +192,7 @@ a{color:var(--cyan)}
     <div id="vignette"></div>
     <svg id="crosshair" width="44" height="44" viewBox="0 0 44 44"><g stroke="#fff" stroke-width="1.6" opacity="0.9"><line x1="22" y1="4" x2="22" y2="15"/><line x1="22" y1="29" x2="22" y2="40"/><line x1="4" y1="22" x2="15" y2="22"/><line x1="29" y1="22" x2="40" y2="22"/></g><circle cx="22" cy="22" r="2" fill="#ffb000"/></svg>
     <canvas id="laneCanvas" width="680" height="86"></canvas>
+    <div id="beatPulse" aria-hidden="true"></div>
     <div id="envChip">Environment: <b>Meadow Gates (built-in)</b> · No splat loaded</div>
     <div id="osdTL" class="osd"></div>
     <div id="osdBL" class="osd"></div>
@@ -207,7 +210,7 @@ a{color:var(--cyan)}
     <div id="menu">
       <div class="menuCard">
         <h1>DRONE <b>HERO</b></h1>
-        <p class="lede">A real acro-mode FPV flight sim with a rhythm game riding on top. The chart calls a maneuver on the beat — you score by <b style="color:var(--ink)">actually flying it</b>: full stick deflection, a full rotation, inside the hit window, while managing throttle so you don't lawn-dart. Free-fly anytime; the song just gives you a reason to send it.</p>
+        <p class="lede">A real acro-mode FPV flight sim built around <b style="color:var(--ink)">phrasing</b> — how lyrical freestyle is actually flown. A soft pulse keeps time on every beat (stronger on the downbeat) but never demands anything. Maneuver calls land only on phrase boundaries, with room to cruise, set up, and send it. You score by <b style="color:var(--ink)">when your rotation completes</b> against the called beat — dead-on pays most, early or late still pays on a graded scale, and a clean, unhurried flip with a held apex earns style credit. Free-fly anytime.</p>
 
         <div class="cols">
           <div class="pane">
@@ -218,10 +221,11 @@ a{color:var(--cyan)}
               <button class="modebtn" data-mode="spotify">SPOTIFY<small>share the Spotify tab's audio</small></button>
             </div>
             <div id="srcDemo">
-              <p><b style="color:var(--ink)">“Gates at Dusk”</b> — a synthesized electronic track generated live in your browser. Chart is locked to its beat grid: one call per beat, denser in the drops.</p>
-              <div class="row"><label class="ck">Difficulty
-                <select id="demoDiff"><option value="chill">Chill — every 2 beats</option><option value="standard" selected>Standard — every beat</option><option value="sendit">Send It — beats + off-beats</option></select></label></div>
-              <div class="statusline ok" id="demoStatus">Demo chart is loaded and ready to fly.</div>
+              <p><b style="color:var(--ink)">“Gates at Dusk”</b> — a synthesized electronic track generated live in your browser. In phrasing mode the chart breathes: calls land on phrase boundaries only, with the occasional two-call combo about a measure apart — bursts, then cruising, like a real lyrical flight.</p>
+              <div class="row"><label class="ck">Call spacing
+                <select id="demoDiff"><option value="phrase4">Phrasing — every 4 measures</option><option value="phrase8" selected>Phrasing — every 8 measures (default)</option><option value="phrase16">Phrasing — every 16 measures · full cruise</option><option value="chill">Legacy — every 2 beats</option><option value="standard">Legacy — every beat</option><option value="sendit">Legacy — beats + off-beats</option></select></label>
+              <label class="ck"><input type="checkbox" id="pulseTick" checked /> Pulse tick (subtle)</label></div>
+              <div class="statusline ok" id="demoStatus">Phrasing chart is loaded and ready to fly.</div>
             </div>
             <div id="srcFile" style="display:none">
               <p>Pick any song file. The game decodes it in your browser, detects onsets, estimates BPM, maps intensity to note density, and builds the chart. Nothing is uploaded.</p>
@@ -230,8 +234,9 @@ a{color:var(--cyan)}
                 <input type="file" id="fileInput" accept="audio/*" style="display:none" />
                 <span id="fileName" style="font-size:12px;color:var(--dim)">No file chosen</span>
               </div>
-              <div class="row"><label class="ck">Density
-                <select id="fileDiff"><option value="chill">Chill</option><option value="standard" selected>Standard</option><option value="sendit">Send It</option></select></label></div>
+              <div class="row"><label class="ck">Call spacing
+                <select id="fileDiff"><option value="phrase4">Phrasing — every 4 measures</option><option value="phrase8" selected>Phrasing — every 8 measures (default)</option><option value="phrase16">Phrasing — every 16 measures · full cruise</option><option value="chill">Legacy — sparse beats</option><option value="standard">Legacy — on-beat</option><option value="sendit">Legacy — dense</option></select></label></div>
+              <p style="font-size:11px">Phrasing mode places calls on phrase boundaries from the detected BPM; high-intensity phrases can trigger a two-call combo about a measure apart.</p>
               <div class="statusline dim" id="fileStatus">Waiting for a file.</div>
             </div>
             <div id="srcSpotify" style="display:none">
@@ -242,7 +247,7 @@ a{color:var(--cyan)}
                 <button class="ghostbtn" id="tapBpmBtn">TAP BPM</button>
                 <span id="tapReadout" style="font-size:12px;color:var(--dim)"></span>
               </div>
-              <p style="font-size:11px">Don't know the BPM? Tap along to the beat with TAP BPM, or look the track up — the chart grid follows this number, so it's worth getting right. Live mode generates calls on the grid while the tab plays.</p>
+              <p style="font-size:11px">Don't know the BPM? Tap along to the beat with TAP BPM, or look the track up — the chart grid follows this number, so it's worth getting right. Live mode uses phrasing: a pulse on every beat, with calls only every 8 measures while the tab plays.</p>
               <div class="statusline dim" id="spotStatus">Not connected. You can still fly live mode silently — but sharing the tab is the real thing.</div>
             </div>
           </div>
@@ -364,7 +369,7 @@ a{color:var(--cyan)}
               <div class="mv"><div class="a">←</div><div class="n">ROLL LEFT</div><div class="d">Full roll left (<kbd>←</kbd>) — barrel-roll 360° left</div></div>
               <div class="mv"><div class="a">→</div><div class="n">ROLL RIGHT</div><div class="d">Full roll right (<kbd>→</kbd>) — barrel-roll 360° right</div></div>
             </div>
-            <p>A call scores when the rotation completes inside its window (±0.6 s, tighter = more points) <b style="color:var(--ink)">and you're above 2 m</b> — no cheating on the pad. A flip bleeds altitude: punch the throttle through it. Flying through a gate is +150 at any time. Crash = combo gone.</p>
+            <p><b style="color:var(--ink)">Timing scoring — no hit/miss windows.</b> What counts is where your full 360° rotation <b style="color:var(--ink)">completes</b> against the called beat: dead-on pays full, and the payout falls off smoothly the earlier or later you land it. A clean full rotation always earns base credit, a held inverted apex or an unhurried rotation earns a style bonus, and skipping a call entirely costs nothing but the points — no fail state, no combo wipe. You still need to be <b style="color:var(--ink)">above 2 m</b> for a rotation to register. A flip bleeds altitude: punch the throttle through it. Flying through a gate is +150 at any time.</p>
             <div class="row" style="margin-top:12px">
               <button class="bigbtn" id="flyBtn">▶ &nbsp;ARM &amp; FLY</button>
               <button class="ghostbtn" id="freeFlyBtn">Free-fly (no chart)</button>
@@ -378,10 +383,10 @@ a{color:var(--cyan)}
           <div class="resultsGrid">
             <div class="rc"><div class="k">SCORE</div><div class="v" id="rScore" style="color:var(--amber)">0</div></div>
             <div class="rc"><div class="k">MAX COMBO</div><div class="v" id="rCombo">0</div></div>
-            <div class="rc"><div class="k">PERFECT</div><div class="v" id="rPerfect" style="color:var(--green)">0</div></div>
-            <div class="rc"><div class="k">GOOD</div><div class="v" id="rGood" style="color:var(--cyan)">0</div></div>
-            <div class="rc"><div class="k">MISSED</div><div class="v" id="rMiss" style="color:var(--red)">0</div></div>
-            <div class="rc"><div class="k">ACCURACY</div><div class="v" id="rAcc">0%</div></div>
+            <div class="rc"><div class="k">ON THE BEAT</div><div class="v" id="rPerfect" style="color:var(--green)">0</div></div>
+            <div class="rc"><div class="k">TIMED CALLS</div><div class="v" id="rGood" style="color:var(--cyan)">0</div></div>
+            <div class="rc"><div class="k">SKIPPED</div><div class="v" id="rMiss" style="color:var(--dim)">0</div></div>
+            <div class="rc"><div class="k">AVG TIMING</div><div class="v" id="rAcc">—</div></div>
           </div>
           <div class="row" style="justify-content:center;margin-top:14px"><button class="bigbtn" id="againBtn">FLY IT AGAIN</button></div>
         </div>
@@ -445,6 +450,43 @@ var fileAudio=null, fileBuffer=null, fileName='';
 var spotStream=null, spotSource=null, spotAnalyser=null, spotLive=false, spotStartCtx=0;
 var DIRS=[{k:'back',arrow:'↑',label:'BACKFLIP'},{k:'front',arrow:'↓',label:'FRONTFLIP'},{k:'left',arrow:'←',label:'ROLL LEFT'},{k:'right',arrow:'→',label:'ROLL RIGHT'}];
 function dirInfo(k){ for(var i=0;i<DIRS.length;i++) if(DIRS[i].k===k) return DIRS[i]; return DIRS[0]; }
+/* ---------------- Phrasing helpers ----------------
+   Calls land on phrase boundaries (multiples of N measures, 4 beats per
+   measure), never on every beat. Occasionally a phrase gets a COMBO: a
+   second call one measure after the first, mirroring real burst flying. */
+function phraseMeasures(diff){
+  if(diff==='phrase4') return 4;
+  if(diff==='phrase16') return 16;
+  if(diff==='phrase8') return 8;
+  return 0; // 0 = legacy every-beat chart
+}
+function isPhraseDiff(diff){ return phraseMeasures(diff)>0; }
+function currentBpm(){
+  if(musicMode==='demo') return DEMO_BPM;
+  if(musicMode==='spotify') return clamp(parseInt($('spotBpm').value,10)||120,40,260);
+  return fileBPM||120;
+}
+function makePhraseNotes(opts){
+  // opts: {bpm, duration, measures, intensityAt(t)->0..1|null, seed}
+  var spb=60/opts.bpm, beatsPerPhrase=opts.measures*4, notes=[];
+  var seed=opts.seed||11; function rnd(){ seed=(seed*16807)%2147483647; return seed/2147483647; }
+  var seq=['back','right','front','left','right','back','left','front','front','right','back','left'];
+  var n=0, firstPhrase=2; // skip the first 2 measures — settle in and cruise first
+  var totalPhrases=Math.floor((opts.duration/spb)/beatsPerPhrase);
+  for(var p=firstPhrase;p<totalPhrases;p++){
+    var t=p*beatsPerPhrase*spb;
+    if(t<2.5||t>opts.duration-2) continue;
+    var inten=opts.intensityAt? opts.intensityAt(t) : 0.5;
+    notes.push({t:t, dir:seq[n%seq.length], judged:false, combo:false}); n++;
+    // Combo: high-intensity phrases (or ~1 in 4 ordinary ones) get a second
+    // call one measure later — the roll-into-flip burst.
+    var combo = inten!==null && inten>0.62 ? rnd()<0.75 : rnd()<0.25;
+    var t2=t+4*spb;
+    if(combo && t2<opts.duration-1.5){ notes.push({t:t2, dir:seq[(n+2)%seq.length], judged:false, combo:true}); n++; }
+  }
+  notes.sort(function(a,b){return a.t-b.t;});
+  return notes;
+}
 
 /* =====================================================================
    DEMO TRACK — synthesized live, 132 BPM
@@ -453,22 +495,32 @@ var DEMO_BPM=132, demoTimer=null, demoNextTime=0, demoStep=0, demoPlaying=false,
 var demoChartCache={};
 function demoChart(diff){
   if(demoChartCache[diff]) return demoChartCache[diff];
-  var spb=60/DEMO_BPM, notes=[], startBeat=8, totalBeats=8+64; // 8-beat intro, 64 beats of chart
+  var spb=60/DEMO_BPM, notes=[];
+  var pm=phraseMeasures(diff);
+  if(pm>0){
+    // Phrasing: six phrases of music so every spacing gets a full flight.
+    var dur=(pm*4*6+8)*spb;
+    notes=makePhraseNotes({bpm:DEMO_BPM, duration:dur, measures:pm, seed:23,
+      intensityAt:function(t){ var beat=t/spb; return beat>pm*4*3 ? 0.8 : 0.45; }});
+    demoChartCache[diff]={notes:notes,duration:dur};
+    return demoChartCache[diff];
+  }
+  // Legacy every-beat charts (kept only as opt-in difficulty options).
+  var startBeat=8, totalBeats=8+64;
   var seq=['back','right','front','left','right','back','left','front'];
   var n=0;
   for(var b=startBeat;b<totalBeats;b++){
     var bar=Math.floor((b-startBeat)/4), inBar=(b-startBeat)%4;
-    var drop = bar>=8; // second half denser
+    var drop = bar>=8;
     var place=false;
     if(diff==='chill') place = (b%2===0);
-    else if(diff==='standard') place = true;
     else place = true;
     if(place){ notes.push({t:b*spb, dir:seq[n%seq.length], judged:false}); n++; }
     if(diff==='sendit' && (drop||bar>=4) && inBar===3){ notes.push({t:(b+0.5)*spb, dir:seq[(n+3)%seq.length], judged:false}); n++; }
     if(diff==='standard' && drop && inBar===3 && bar%2===1){ notes.push({t:(b+0.5)*spb, dir:seq[(n+5)%seq.length], judged:false}); n++; }
   }
-  var dur=(totalBeats+4)*spb;
-  demoChartCache[diff]={notes:notes,duration:dur};
+  var dur2=(totalBeats+4)*spb;
+  demoChartCache[diff]={notes:notes,duration:dur2};
   return demoChartCache[diff];
 }
 function demoNote(step, t){
@@ -558,6 +610,17 @@ function analyseBuffer(buf, diff){
   var maxE=0.0001; for(var m=0;m<frames;m+=7) maxE=Math.max(maxE,energy[m]);
   // snap phase: use first strong onset as grid anchor
   var anchor=onsets.length? onsets[0]%spb : 0;
+  var pmF=phraseMeasures(diff);
+  if(pmF>0){
+    // Phrasing: calls only on phrase boundaries (anchor-shifted grid);
+    // intensity decides combos, not whether a call exists.
+    var phraseNotes=makePhraseNotes({bpm:bpm, duration:buf.duration, measures:pmF, seed:7,
+      intensityAt:function(t){ return energyAt(t)/maxE; }});
+    phraseNotes.forEach(function(nt){ nt.t+=anchor; });
+    phraseNotes=phraseNotes.filter(function(nt){ return nt.t<buf.duration-1.5; });
+    return {bpm:bpm, notes:phraseNotes, onsets:onsets.length};
+  }
+  // Legacy beat-density chart.
   var notes=[], seed=7; function rnd(){ seed=(seed*16807)%2147483647; return seed/2147483647; }
   var lastDir=-1, totalBeats=Math.floor(buf.duration/spb);
   for(var bIdx=0;bIdx<totalBeats;bIdx++){
@@ -598,9 +661,9 @@ function setupSpotifyShare(){
   }).catch(function(e){ $('spotStatus').textContent='Share cancelled: '+e.message; $('spotStatus').className='statusline err'; });
 }
 function spotifyChart(bpm){
-  var spb=60/bpm, notes=[], seq=['back','right','front','left','left','front','right','back'], n=0;
-  for(var b=4;b<4+400;b++){ notes.push({t:b*spb, dir:seq[n%seq.length], judged:false}); n++; }
-  return notes;
+  // Live mode follows the same phrasing: one call every 8 measures.
+  var spb=60/bpm, dur=400*spb;
+  return makePhraseNotes({bpm:bpm, duration:dur, measures:8, seed:31, intensityAt:function(){ return 0.5; }});
 }
 
 /* =====================================================================
@@ -828,6 +891,7 @@ function resetDrone(){
     pos:new THREE.Vector3(0,0.35,8), vel:new THREE.Vector3(),
     quat:new THREE.Quaternion(), throttle:0,
     pitchAccum:0, rollAccum:0, trickCooldown:0,
+    trickActive:false, trickDur:0, apexHold:0,
     battery:100, crashed:false, armed:false, airTime:0
   };
   gateList.forEach(function(g){ g.userData.passed=false; g.children.forEach(function(c){ c.material=g.userData.mats[0]; }); });
@@ -1246,8 +1310,12 @@ function readSticks(dt){
 /* ---------------- Trick detection ---------------- */
 var trickEvents=[]; // {type, t}
 function registerTrick(type){
-  trickEvents.push({type:type, t:songTime()});
-  onTrickFlown(type);
+  // Style evidence gathered during the rotation: how long it took and how
+  // long the inverted apex was held. Unhurried is rewarded, never punished.
+  var style={dur:drone?drone.trickDur:0, apex:drone?drone.apexHold:0};
+  if(drone){ drone.trickActive=false; drone.trickDur=0; drone.apexHold=0; }
+  trickEvents.push({type:type, t:songTime(), style:style});
+  onTrickFlown(type, style);
 }
 
 /* ---------------- Physics step ---------------- */
@@ -1279,6 +1347,15 @@ function stepPhysics(dt){
   var pitchDeg=wx*R2D*dt, rollDeg=wz*R2D*dt;
   if(Math.abs(wx)>0.6) drone.pitchAccum+=pitchDeg; else drone.pitchAccum*=Math.exp(-3.2*dt);
   if(Math.abs(wz)>0.6) drone.rollAccum+=rollDeg; else drone.rollAccum*=Math.exp(-3.2*dt);
+  // Track the in-progress rotation for style scoring (duration + apex hold).
+  var rotating=(Math.abs(drone.pitchAccum)>25||Math.abs(drone.rollAccum)>25);
+  if(rotating && drone.pos.y>2){
+    if(!drone.trickActive){ drone.trickActive=true; drone.trickDur=0; drone.apexHold=0; }
+    drone.trickDur+=dt;
+    if(up.y<-0.25) drone.apexHold+=dt; // genuinely inverted
+  } else if(!rotating && drone.trickActive && Math.abs(drone.pitchAccum)<10 && Math.abs(drone.rollAccum)<10){
+    drone.trickActive=false; drone.trickDur=0; drone.apexHold=0;
+  }
   if(drone.trickCooldown<=0 && drone.pos.y>2){
     if(drone.pitchAccum>=325){ registerTrick('back'); drone.pitchAccum=0; drone.trickCooldown=0.4; }
     else if(drone.pitchAccum<=-325){ registerTrick('front'); drone.pitchAccum=0; drone.trickCooldown=0.4; }
@@ -1352,9 +1429,9 @@ function hideCenter(){ $('centerMsg').style.display='none'; }
    ===================================================================== */
 var state='menu'; // menu | fly | pause | crash
 var withChart=false, flightStartPerf=0, pausedSongOffset=0;
-var stats={score:0,combo:0,maxCombo:0,perfect:0,good:0,miss:0,gates:0};
+var stats={score:0,combo:0,maxCombo:0,perfect:0,good:0,miss:0,gates:0,timingSum:0,timingCount:0,style:0};
 var bestScore=0;
-function resetStats(){ stats={score:0,combo:0,maxCombo:0,perfect:0,good:0,miss:0,gates:0}; updateScoreUI(); }
+function resetStats(){ stats={score:0,combo:0,maxCombo:0,perfect:0,good:0,miss:0,gates:0,timingSum:0,timingCount:0,style:0}; updateScoreUI(); }
 function addScore(pts, why){
   stats.score+=pts; if(why==='GATE') stats.gates++;
   updateScoreUI();
@@ -1373,8 +1450,23 @@ function showJudge(txt, pts, color){
   if(judgeTimer) clearTimeout(judgeTimer);
   judgeTimer=setTimeout(function(){ jp.style.opacity='0'; },700);
 }
-function onTrickFlown(type){
+/* Timing scoring: a call is matched if the rotation COMPLETES within a
+   generous 3.5 s association window of the called beat. Points = a base
+   credit for the clean full rotation (always earned) + a timing bonus
+   that falls off smoothly with |error| + a style bonus. No fail state. */
+var ASSOC_WINDOW=3.5;
+function timingBonus(absErr){
+  if(absErr<=0.15) return 300;
+  if(absErr<=0.35) return 240;
+  if(absErr<=0.65) return 170;
+  if(absErr<=1.1) return 110;
+  if(absErr<=1.8) return 60;
+  if(absErr<=2.6) return 30;
+  return 10;
+}
+function onTrickFlown(type, style){
   var info=dirInfo(type);
+  style=style||{dur:0,apex:0};
   if(!withChart || state!=='fly'){
     addScore(25); showJudge(info.label+'!', 25, '#2ee6c8'); beep(880,0.08,'triangle',0.1);
     return;
@@ -1385,31 +1477,63 @@ function onTrickFlown(type){
     if(n.judged||n.dir!==type) continue;
     var d=Math.abs(n.t-now); if(d<bestDt){bestDt=d;bestNote=n;}
   }
-  if(bestNote && bestDt<=0.62){
+  if(bestNote && bestDt<=ASSOC_WINDOW){
     bestNote.judged=true;
-    var mult = stats.combo>=16?2 : stats.combo>=8?1.5 : 1;
-    var base, label, color;
-    if(bestDt<=0.22){ base=300; label='PERFECT'; color='#57e389'; stats.perfect++; }
-    else if(bestDt<=0.42){ base=150; label='GREAT'; color='#39b6ff'; stats.good++; }
-    else { base=80; label='GOOD'; color='#e8f1f2'; stats.good++; }
-    var pts=Math.round(base*mult);
+    var signedErr=now-bestNote.t; // + late, − early
+    stats.timingSum+=Math.abs(signedErr); stats.timingCount++;
+    var stylePts=0, styleTxt='';
+    if(style.apex>=0.18){ stylePts+=80; styleTxt=' · HELD APEX'; }
+    if(style.dur>=0.95){ stylePts+=40; styleTxt+=' · UNHURRIED'; }
+    stats.style+=stylePts;
+    var mult = stats.combo>=8?2 : stats.combo>=4?1.5 : 1;
+    var pts=Math.round((100+timingBonus(bestDt))*mult)+stylePts;
+    var label, color;
+    if(bestDt<=0.18){ label='ON THE BEAT'; color='#57e389'; stats.perfect++; }
+    else if(bestDt<=0.65){ label=signedErr<0?'EARLY':'LATE'; color='#39b6ff'; stats.good++; }
+    else { label=signedErr<0?'EARLY':'LATE'; color='#e8f1f2'; stats.good++; }
     stats.combo++; stats.maxCombo=Math.max(stats.maxCombo,stats.combo);
     addScore(pts);
     showJudge(label+' '+info.label, pts, color);
-    beep(bestDt<=0.22?1560:1180, 0.09, 'square', 0.11);
+    if(styleTxt) $('judgePts').textContent='+'+pts+styleTxt;
+    beep(bestDt<=0.18?1560:1180, 0.09, 'square', 0.11);
   } else {
-    showJudge(info.label, 0, '#8fa6ad'); // flown, but no call for it
+    // Flown with no call near it: still a clean rotation, small credit.
+    addScore(25);
+    showJudge(info.label+' — FLOWN', 25, '#8fa6ad');
   }
 }
 function judgeMisses(){
   if(!withChart||state!=='fly') return;
   var now=songTime();
   for(var i=0;i<chart.length;i++){ var n=chart[i];
-    if(!n.judged && now > n.t+0.62){
-      n.judged=true; stats.miss++; stats.combo=0; updateScoreUI();
-      showJudge('MISS', 0, '#ff4d4d'); beep(220,0.14,'sawtooth',0.08);
+    if(!n.judged && now > n.t+ASSOC_WINDOW){
+      // Skipped: no points, but no fail state and the combo survives.
+      n.judged=true; n.skipped=true; stats.miss++; updateScoreUI();
     }
   }
+}
+
+/* ---------------- Beat pulse (metronome — never a demand) ---------------- */
+var lastBeatIdx=-1, pulseFlashAt=0, pulseDown=false;
+function resetPulse(){ lastBeatIdx=-1; }
+function tickPulse(){
+  var el=$('beatPulse'); if(!el) return;
+  if(state!=='fly'||!withChart){ el.style.opacity='0.18'; el.style.transform='translateX(-50%) scale(1)'; return; }
+  var bpm=currentBpm(), spb=60/bpm, now=songTime();
+  var beatIdx=Math.floor(now/spb);
+  if(beatIdx!==lastBeatIdx && beatIdx>=0){
+    lastBeatIdx=beatIdx; pulseDown=(beatIdx%4===0); pulseFlashAt=performance.now();
+    var tickEl=$('pulseTick');
+    if(tickEl && tickEl.checked && AC && !muted){
+      // Subtle tick: short, quiet blip — downbeat slightly higher/louder.
+      beep(pulseDown?920:640, 0.035, 'sine', pulseDown?0.045:0.022);
+    }
+  }
+  var age=(performance.now()-pulseFlashAt)/160;
+  var sc=pulseDown? 1+(1-Math.min(1,age))*0.9 : 1+(1-Math.min(1,age))*0.45;
+  el.style.transform='translateX(-50%) scale('+sc.toFixed(2)+')';
+  el.style.opacity=age<1? '0.95':'0.3';
+  el.classList.toggle('down', pulseDown);
 }
 
 /* ---------------- song clock per source ---------------- */
@@ -1430,13 +1554,15 @@ function songDur(){
 function prepareChartForMode(){
   if(musicMode==='demo'){
     var dc=demoChart($('demoDiff').value);
-    chart=dc.notes.map(function(n){return {t:n.t,dir:n.dir,judged:false};});
-    songDuration=dc.duration; chartSourceName='Demo — “Gates at Dusk” ('+DEMO_BPM+' BPM)';
+    chart=dc.notes.map(function(n){return {t:n.t,dir:n.dir,judged:false,combo:!!n.combo};});
+    songDuration=dc.duration;
+    var pmD=phraseMeasures($('demoDiff').value);
+    chartSourceName='Demo — “Gates at Dusk” ('+DEMO_BPM+' BPM'+(pmD? ' · phrasing /'+pmD+' meas':' · legacy')+')';
     return true;
   }
   if(musicMode==='file'){
     if(!fileBuffer) return false;
-    chart=chart.map(function(n){return {t:n.t,dir:n.dir,judged:false};});
+    chart=chart.map(function(n){return {t:n.t,dir:n.dir,judged:false,combo:!!n.combo};});
     return chart.length>0;
   }
   if(musicMode==='spotify'){
@@ -1455,7 +1581,7 @@ function startFlight(chartMode){
     $('flyHint').className='statusline err';
     return;
   }
-  resetStats(); trickEvents=[];
+  resetStats(); trickEvents=[]; resetPulse();
   resetDrone(); drone.armed=true;
   flightStartPerf=performance.now();
   $('menu').classList.add('hidden');
@@ -1506,9 +1632,9 @@ function finishTrack(){
   $('rScore').textContent=stats.score.toLocaleString();
   $('rCombo').textContent='×'+stats.maxCombo;
   $('rPerfect').textContent=stats.perfect;
-  $('rGood').textContent=stats.good;
+  $('rGood').textContent=stats.perfect+stats.good;
   $('rMiss').textContent=stats.miss;
-  $('rAcc').textContent=(total? Math.round((stats.perfect+stats.good)/total*100):0)+'%';
+  $('rAcc').textContent=stats.timingCount? '±'+(stats.timingSum/stats.timingCount).toFixed(2)+'s' : '—';
   $('resultsBox').style.display='';
 }
 
@@ -1526,23 +1652,28 @@ function drawLane(){
     lctx.fillText(state==='menu'?'— chart appears here when a track is flying —':'— FREE FLY · no chart —', W/2, 44);
     return;
   }
-  var now=songTime(), hitX=W*0.22, pxs=105;
+  var now=songTime(), hitX=W*0.22, pxs=52;
   lctx.fillStyle='rgba(10,14,17,0.62)'; roundRect(lctx,0,6,W,64,8); lctx.fill();
   lctx.strokeStyle='rgba(255,255,255,0.14)'; roundRect(lctx,0,6,W,64,8); lctx.stroke();
-  // beat pulse ring
-  var bpm = musicMode==='demo'?DEMO_BPM : musicMode==='spotify'?(parseInt($('spotBpm').value,10)||120) : (fileBPM||120);
-  var phase=(now%(60/bpm))/(60/bpm), pulse=1-phase;
-  lctx.strokeStyle='rgba(255,176,0,'+(0.25+pulse*0.6)+')'; lctx.lineWidth=2;
-  lctx.beginPath(); lctx.arc(hitX,38,17+pulse*5,0,Math.PI*2); lctx.stroke();
-  lctx.fillStyle='#ffb000'; lctx.font='bold 20px IBM Plex Mono'; lctx.textAlign='center';
+  // beat pulse ring — every beat pulses; the downbeat pulses bigger/brighter
+  var bpm = currentBpm();
+  var spbL=60/bpm, beatIdxL=Math.floor(now/spbL), isDown=(beatIdxL%4===0);
+  var phase=(now%spbL)/spbL, pulse=1-phase;
+  lctx.strokeStyle=isDown? 'rgba(255,255,255,'+(0.35+pulse*0.6)+')' : 'rgba(255,176,0,'+(0.2+pulse*0.5)+')';
+  lctx.lineWidth=isDown?3:2;
+  lctx.beginPath(); lctx.arc(hitX,38,(isDown?19:17)+pulse*(isDown?8:5),0,Math.PI*2); lctx.stroke();
+  lctx.fillStyle=isDown?'#ffffff':'#ffb000'; lctx.font='bold 20px IBM Plex Mono'; lctx.textAlign='center';
   lctx.fillText('◆', hitX, 45);
-  // window shading
-  lctx.fillStyle='rgba(255,176,0,0.07)'; lctx.fillRect(hitX-0.62*pxs, 8, 1.24*pxs, 60);
+  // graded timing zone (not a hit window): brightest at the called beat,
+  // fading out to the edge of the association range
+  lctx.fillStyle='rgba(255,176,0,0.05)'; lctx.fillRect(hitX-1.8*pxs, 8, 3.6*pxs, 60);
+  lctx.fillStyle='rgba(255,176,0,0.09)'; lctx.fillRect(hitX-0.35*pxs, 8, 0.7*pxs, 60);
   var nextNote=null;
   for(var i=0;i<chart.length;i++){ var n=chart[i]; var dtN=n.t-now;
-    if(dtN>4.4||dtN<-0.9) continue;
+    if(dtN>11||dtN<-3.5) continue;
     var x=hitX+dtN*pxs, info=dirInfo(n.dir);
-    var alpha = n.judged? 0.18 : clamp(1-Math.max(0,dtN-3.4)/1.2,0.25,1);
+    if(x>W-14) continue;
+    var alpha = n.judged? 0.18 : clamp(1-Math.max(0,dtN-8)/3,0.3,1);
     lctx.globalAlpha=alpha;
     lctx.fillStyle=DIR_COLORS[n.dir];
     roundRect(lctx,x-17,20,34,36,7); lctx.fill();
@@ -1551,18 +1682,24 @@ function drawLane(){
     if(!n.judged&&dtN>-0.62&&!nextNote) nextNote=n;
     if(!n.judged&&dtN>0&&(!nextNote||n.t<nextNote.t)) nextNote=nextNote&&nextNote.t-now<=0?nextNote:(nextNote&&nextNote.t<n.t?nextNote:n);
   }
-  // NOW prompt
+  // Prompt with real lead time: a full measure of GET READY to set up the
+  // line and punch the throttle, then NOW on the final approach.
+  var leadTime=Math.max(2.2, (60/currentBpm())*4);
   var promptNote=null;
-  for(var j=0;j<chart.length;j++){ var nn=chart[j]; if(!nn.judged && nn.t-now<=0.95 && nn.t-now>-0.62){ promptNote=nn; break; } }
+  for(var j=0;j<chart.length;j++){ var nn=chart[j]; if(!nn.judged && nn.t-now<=leadTime && nn.t-now>-ASSOC_WINDOW){ promptNote=nn; break; } }
   if(promptNote){
-    var inf=dirInfo(promptNote.dir);
-    $('nowArr').textContent=inf.arrow; $('nowArr').style.color=DIR_COLORS[promptNote.dir];
-    $('nowLbl').textContent=inf.label+' — NOW';
-    $('nowPrompt').style.opacity='1';
+    var inf2=dirInfo(promptNote.dir), dtP=promptNote.t-now;
+    $('nowArr').textContent=inf2.arrow; $('nowArr').style.color=DIR_COLORS[promptNote.dir];
+    if(dtP>0.9){ $('nowLbl').textContent=inf2.label+' — IN '+Math.ceil(dtP)+(promptNote.combo?' · COMBO':''); $('nowPrompt').style.opacity='0.75'; }
+    else if(dtP>-0.4){ $('nowLbl').textContent=inf2.label+' — NOW'; $('nowPrompt').style.opacity='1'; }
+    else { $('nowLbl').textContent=inf2.label+' — LAND IT ON THE BEAT'; $('nowPrompt').style.opacity='0.9'; }
   } else $('nowPrompt').style.opacity='0';
-  // header text
+  // header text: where we are in the phrase + when the next call lands
   lctx.fillStyle='#8fa6ad'; lctx.font='10px IBM Plex Mono'; lctx.textAlign='left';
-  lctx.fillText(chartSourceName.toUpperCase(), 10, 82);
+  var spbH=60/currentBpm(), measNow=Math.floor(now/(spbH*4))+1;
+  var nextCall=null; for(var nc=0;nc<chart.length;nc++){ if(!chart[nc].judged){ nextCall=chart[nc]; break; } }
+  var phraseTxt=chartSourceName.toUpperCase()+' · MEASURE '+measNow+(nextCall? ' · NEXT CALL IN '+Math.max(0,nextCall.t-now).toFixed(0)+'s':'');
+  lctx.fillText(phraseTxt, 10, 82);
   lctx.textAlign='right';
   var rem=chart.filter(function(c){return !c.judged;}).length;
   lctx.fillText(rem+' CALLS LEFT', W-10, 82);
@@ -1611,15 +1748,18 @@ function loop(nowMs){
     if(musicMode==='file' && withChart && state==='fly' && fileAudio && fileAudio.ended) finishTrack();
     if(musicMode==='spotify' && withChart && state==='fly' && chart.length){
       var lastN=chart[chart.length-1];
-      if(songTime() > lastN.t - 8){ // keep the live grid generating ahead of the song
+      if(songTime() > lastN.t - 20){ // extend the phrase grid ahead of the song
         var bpmS=clamp(parseInt($('spotBpm').value,10)||120,40,260), spbS=60/bpmS;
         var seqS=['right','back','left','front','front','left','back','right'];
-        for(var si=1;si<=32;si++) chart.push({t:lastN.t+si*spbS, dir:seqS[(chart.length+si)%seqS.length], judged:false});
+        var baseBeat=Math.round(lastN.t/spbS);
+        for(var si=1;si<=4;si++){ var bt=baseBeat+si*32; chart.push({t:bt*spbS, dir:seqS[(chart.length+si)%seqS.length], judged:false, combo:false}); }
+        chart.sort(function(a,b){return a.t-b.t;});
       }
     }
   }
   if(renderer){ renderer.render(scene,camera); }
   sampleCalibration(); tickRadioUI(nowMs);
+  tickPulse();
   drawLane(); updateOSD();
 }
 
