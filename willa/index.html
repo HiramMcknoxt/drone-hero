@@ -949,7 +949,7 @@ var renderer, scene, camera, worldGroup=null, gateList=[], splatObj=null, splatN
    hosted copy (expires 2026-11-09T06:51:38Z); WILLA_LOCAL is the identical
    file bundled with this fork, tried if the hosted link can't be read. */
 var willaLoaded=false, willaSource='';
-var splatIsWilla=false, splatFlipH=0, splatGrid=null; // Willa-only flip state (see applySplatTransform)
+var splatGrid=null; // orientation grid kept as a child of the splat object
 var WILLA_URL='https://muse.ai/files/678388725354587/1439900574254971/kqo48ih5x2cyn86l3l4qfxok/willa.splat';
 var WILLA_PART_COUNT=24, WILLA_PART_BYTES=2000000, WILLA_TOTAL_BYTES=48000000; // bundled copy, chunked (see willaFetchBundled)
 var WILLA_SPAWN={x:0, y:15, z:44}; // above the scene's vertical middle (~27 tall once grounded), south edge, nose across it
@@ -1046,7 +1046,7 @@ function clearSplat(){
   var wasWilla=willaLoaded;
   if(splatObj){ scene.remove(splatObj); splatObj.geometry.dispose(); splatObj=null; splatName=''; }
   willaLoaded=false; willaSource='';
-  splatIsWilla=false; splatFlipH=0; splatGrid=null;
+  splatGrid=null;
   if(renderer) renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
   $('clearSplatBtn').style.display='none'; updateEnvChip();
   if(worldGroup) worldGroup.visible=true;
@@ -1055,16 +1055,9 @@ function clearSplat(){
 function installSplat(points, name, isWilla){
   clearSplat();
   splatObj=points; splatName=name; scene.add(splatObj);
-  // Willa only: the Postshot export uses COLMAP-style Y-down/Z-forward axes,
-  // so the scene renders upside-down in this Y-up world. Record the parsed
-  // height now (positions are grounded at min-Y = 0 by parseSplat) so
-  // applySplatTransform can rotate it right-side up and re-ground it.
-  splatIsWilla=!!isWilla;
-  if(splatIsWilla){
-    points.geometry.computeBoundingBox();
-    var bb=points.geometry.boundingBox;
-    splatFlipH=bb.max.y-bb.min.y;
-  }
+  // Willa only: nothing to do here — the flip is already baked into the
+  // position data by parseSplat (see there), so the splat installs with the
+  // plain transform every other splat gets.
   if(worldGroup) worldGroup.visible=false;
   // keep an invisible-ish ground grid for orientation reference
   var grid=new THREE.GridHelper(400,40,0x2ee6c8,0x2ee6c8);
@@ -1078,22 +1071,14 @@ function applySplatTransform(){
   var s=parseFloat($('splatScale').value);
   var yOff=parseFloat($('splatY').value);
   splatObj.scale.set(s,s,s);
-  if(splatIsWilla){
-    // 180° about X: negates Y and Z, turning the Y-down export right-side up.
-    // (This build renders splats as an isotropic point cloud — positions,
-    // colors, and a scalar size only; no per-gaussian orientation is kept,
-    // so the object-level rotation is the complete transform.) Rotation maps
-    // local Y [0..H] to [-H..0], so lift by H*s to put the yard's ground back
-    // at the y=0 ground plane, and counter-place the child grid so it stays
-    // on that same ground instead of riding to the top of the scene.
-    splatObj.rotation.x=Math.PI;
-    splatObj.position.y=splatFlipH*s+yOff;
-    if(splatGrid) splatGrid.position.y=splatFlipH-0.02/Math.max(s,0.001);
-  } else {
-    splatObj.rotation.x=0;
-    splatObj.position.y=yOff;
-    if(splatGrid) splatGrid.position.y=0.02;
-  }
+  // No rotation here, for any splat: the Willa scene's right-side-up flip is
+  // baked into its parsed positions (parseSplat), so the object transform
+  // stays the plain scale + height offset the sliders describe. (An earlier
+  // build tried this flip as rotation.x = PI on this object; the rendered
+  // scene verifiably never changed, so the flip moved into the data itself.)
+  splatObj.rotation.x=0;
+  splatObj.position.y=yOff;
+  if(splatGrid) splatGrid.position.y=0.02;
   $('splatScaleVal').textContent=s.toFixed(1)+'×';
   $('splatYVal').textContent=$('splatY').value+' m';
 }
@@ -1105,8 +1090,8 @@ function loadSplatBuffer(buf, name){
   $('splatStatus').textContent='Parsing '+name+' …'; $('splatStatus').className='statusline dim';
   setTimeout(function(){
     try{
-      var pts = isPly? parsePly(buf) : parseSplat(buf);
       var isWilla=/^willa\.splat$/i.test(name);
+      var pts = isPly? parsePly(buf) : parseSplat(buf, isWilla);
       var srcNote=willaSource; // capture now: installSplat->clearSplat resets it
       installSplat(pts, isWilla? 'Willa — willa.splat' : name, isWilla);
       var count=pts.geometry.attributes.position.count;
@@ -1125,24 +1110,42 @@ function loadSplatBuffer(buf, name){
     }
   },30);
 }
-function parseSplat(buf){
+function parseSplat(buf, flipYDown){
   var row=32, count=Math.floor(buf.byteLength/row);
   if(count<10) throw new Error('file too small to be a .splat');
   // Willa fork perf: typed-array views over the buffer (the .splat layout is
   // little-endian, as are the browsers this runs in) — identical values out,
   // but a 1.5M-gaussian file parses in a fraction of the DataView-loop time.
   var f32=new Float32Array(buf), u8=new Uint8Array(buf), pos=new Float32Array(count*3), col=new Float32Array(count*3), scl=new Float32Array(count);
-  var minY=1e9;
+  var minY=1e9, maxY=-1e9;
   for(var i=0;i<count;i++){
     var o8=i*8, o=i*row;
     pos[i*3]=f32[o8]; pos[i*3+1]=f32[o8+1]; pos[i*3+2]=f32[o8+2];
     scl[i]=(f32[o8+3]+f32[o8+4]+f32[o8+5])/3;
     col[i*3]=u8[o+24]/255; col[i*3+1]=u8[o+25]/255; col[i*3+2]=u8[o+26]/255;
     if(pos[i*3+1]<minY) minY=pos[i*3+1];
+    if(pos[i*3+1]>maxY) maxY=pos[i*3+1];
   }
   // recentre XZ on centroid, drop min-Y to 0 — splat exports vary wildly in origin
   var cx=0,cz=0; for(var j=0;j<count;j+=9){ cx+=pos[j*3]; cz+=pos[j*3+2]; } var n9=Math.ceil(count/9); cx/=n9; cz/=n9;
-  for(var k=0;k<count;k++){ pos[k*3]-=cx; pos[k*3+2]-=cz; pos[k*3+1]-=minY; }
+  if(flipYDown){
+    // WILLA FLIP — baked into the positions, deliberately NOT an object
+    // rotation: the previous build set rotation.x = PI on the splat object
+    // and the rendered scene verifiably never changed (checked live, twice,
+    // including a cache-busted load). The Postshot export is Y-down —
+    // verified against the bundled file itself: its dense ground sheet
+    // (~400k gaussians in a 1-unit band) sits at the MAX-Y end of the raw
+    // data with a sharp cutoff above it, and the vegetation tapers off
+    // toward min-Y, i.e. up is -Y in the export. A 180° turn about X in
+    // data space (y -> H - y, z -> -z, H = scene height) puts the ground
+    // sheet at the bottom and the treetops at the top; world placement is
+    // identical to what the object rotation intended (points span y 0..H,
+    // ground sheet just above the y=0 plane, spawn unchanged).
+    var H=maxY-minY;
+    for(var k=0;k<count;k++){ pos[k*3]-=cx; pos[k*3+1]=H-(pos[k*3+1]-minY); pos[k*3+2]=-(pos[k*3+2]-cz); }
+  } else {
+    for(var k=0;k<count;k++){ pos[k*3]-=cx; pos[k*3+2]-=cz; pos[k*3+1]-=minY; }
+  }
   var geo=new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
   geo.setAttribute('color', new THREE.BufferAttribute(col,3));
