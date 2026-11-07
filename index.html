@@ -197,7 +197,7 @@ a{color:var(--cyan)}
     <div id="osdTL" class="osd"></div>
     <div id="osdBL" class="osd"></div>
     <div id="osdBR" class="osd"></div>
-    <div id="nowPrompt"><div class="arr" id="nowArr">↑</div><div class="lbl" id="nowLbl">BACKFLIP</div></div>
+    <div id="nowPrompt"><div class="arr" id="nowArr">↑</div><div class="lbl" id="nowLbl">FRONTFLIP</div></div>
     <div id="judgePop"><div class="j" id="judgeTxt">PERFECT</div><div class="pts" id="judgePts">+300</div></div>
     <div id="centerMsg" style="display:none"><div class="big" id="centerBig">CRASHED</div><div class="sub" id="centerSub">Press R to rebuild &amp; reset</div></div>
     <div class="stickviz" id="stickL"><div class="cross" style="left:50%;top:6px;width:1px;height:74px"></div><div class="cross" style="top:50%;left:6px;height:1px;width:74px"></div><div class="dot" id="dotL"></div><div class="lbl" id="lblL">THR / YAW</div></div>
@@ -221,9 +221,9 @@ a{color:var(--cyan)}
               <button class="modebtn" data-mode="spotify">SPOTIFY<small>share the Spotify tab's audio</small></button>
             </div>
             <div id="srcDemo">
-              <p><b style="color:var(--ink)">“Gates at Dusk”</b> — a synthesized electronic track generated live in your browser. In phrasing mode the chart breathes: calls land on phrase boundaries only, with the occasional two-call combo about a measure apart — bursts, then cruising, like a real lyrical flight.</p>
+              <p><b style="color:var(--ink)">“Gates at Dusk”</b> — a synthesized electronic track generated live in your browser. Variable spacing (the new default) is faster than the old every-8-measures chart: calls land on measure boundaries with changing gaps — mostly every 2–4 measures, the occasional 8-measure cruise break, and two-call combos about a measure apart — bursts, then cruising, like a real lyrical flight.</p>
               <div class="row"><label class="ck">Call spacing
-                <select id="demoDiff"><option value="phrase4">Phrasing — every 4 measures</option><option value="phrase8" selected>Phrasing — every 8 measures (default)</option><option value="phrase16">Phrasing — every 16 measures · full cruise</option><option value="chill">Legacy — every 2 beats</option><option value="standard">Legacy — every beat</option><option value="sendit">Legacy — beats + off-beats</option></select></label>
+                <select id="demoDiff"><option value="variable" selected>Variable — bursts &amp; cruises · 2–8 measures (default, faster)</option><option value="phrase2">Fast — every 2 measures</option><option value="phrase4">Phrasing — every 4 measures</option><option value="phrase8">Phrasing — every 8 measures · original</option><option value="phrase16">Phrasing — every 16 measures · full cruise</option><option value="chill">Legacy — every 2 beats</option><option value="standard">Legacy — every beat</option><option value="sendit">Legacy — beats + off-beats</option></select></label>
               <label class="ck"><input type="checkbox" id="pulseTick" checked /> Pulse tick (subtle)</label></div>
               <div class="statusline ok" id="demoStatus">Phrasing chart is loaded and ready to fly.</div>
             </div>
@@ -235,8 +235,8 @@ a{color:var(--cyan)}
                 <span id="fileName" style="font-size:12px;color:var(--dim)">No file chosen</span>
               </div>
               <div class="row"><label class="ck">Call spacing
-                <select id="fileDiff"><option value="phrase4">Phrasing — every 4 measures</option><option value="phrase8" selected>Phrasing — every 8 measures (default)</option><option value="phrase16">Phrasing — every 16 measures · full cruise</option><option value="chill">Legacy — sparse beats</option><option value="standard">Legacy — on-beat</option><option value="sendit">Legacy — dense</option></select></label></div>
-              <p style="font-size:11px">Phrasing mode places calls on phrase boundaries from the detected BPM; high-intensity phrases can trigger a two-call combo about a measure apart.</p>
+                <select id="fileDiff"><option value="variable" selected>Variable — bursts &amp; cruises · 2–8 measures (default, faster)</option><option value="phrase2">Fast — every 2 measures</option><option value="phrase4">Phrasing — every 4 measures</option><option value="phrase8">Phrasing — every 8 measures · original</option><option value="phrase16">Phrasing — every 16 measures · full cruise</option><option value="chill">Legacy — sparse beats</option><option value="standard">Legacy — on-beat</option><option value="sendit">Legacy — dense</option></select></label></div>
+              <p style="font-size:11px">Variable mode (default) places calls on measure boundaries from the detected BPM with changing gaps — mostly every 2–4 measures, with an occasional 8-measure cruise break; high-intensity sections get tighter gaps and more two-call combos about a measure apart.</p>
               <div class="statusline dim" id="fileStatus">Waiting for a file.</div>
             </div>
             <div id="srcSpotify" style="display:none">
@@ -251,7 +251,9 @@ a{color:var(--cyan)}
                 <button class="ghostbtn" id="resumeAutoBtn" style="display:none">Use auto-detected</button>
                 <span id="tapReadout" style="font-size:12px;color:var(--dim)"></span>
               </div>
-              <p style="font-size:11px">The manual box and TAP BPM are now only an optional override — touching either pauses auto-detection until you press “Use auto-detected”. Detection needs a few seconds of clear beat; if the audio is very quiet or beatless it will say so below rather than guess. Live mode uses phrasing: a pulse on every beat, with calls only every 8 measures while the tab plays.</p>
+              <div class="row"><label class="ck">Call spacing
+                <select id="spotDiff"><option value="variable" selected>Variable — bursts &amp; cruises · 2–8 measures (default, faster)</option><option value="phrase2">Fast — every 2 measures</option><option value="phrase4">Phrasing — every 4 measures</option><option value="phrase8">Phrasing — every 8 measures · original</option><option value="phrase16">Phrasing — every 16 measures · full cruise</option></select></label></div>
+              <p style="font-size:11px">The manual box and TAP BPM are now only an optional override — touching either pauses auto-detection until you press “Use auto-detected”. Detection needs a few seconds of clear beat; if the audio is very quiet or beatless it will say so below rather than guess. Live mode keeps a pulse on every beat, with calls at the spacing above — variable by default, so bursts land every 2–4 measures with occasional cruise breaks.</p>
               <div class="statusline dim" id="spotStatus">Not connected. Share the Spotify tab and press play — tempo detection starts automatically.</div>
             </div>
           </div>
@@ -368,8 +370,8 @@ a{color:var(--cyan)}
           <div class="pane">
             <h2>5 · THE CALLS <span>— FLY THE MANEUVER</span></h2>
             <div class="maneuverGrid">
-              <div class="mv"><div class="a">↑</div><div class="n">BACKFLIP</div><div class="d">Full pitch back (<kbd>↓</kbd> stick) — rotate 360° backward</div></div>
-              <div class="mv"><div class="a">↓</div><div class="n">FRONTFLIP</div><div class="d">Full pitch forward (<kbd>↑</kbd> stick) — rotate 360° forward</div></div>
+              <div class="mv"><div class="a">↑</div><div class="n">FRONTFLIP</div><div class="d">Full pitch forward (<kbd>↑</kbd> stick) — rotate 360° forward</div></div>
+              <div class="mv"><div class="a">↓</div><div class="n">BACKFLIP</div><div class="d">Full pitch back (<kbd>↓</kbd> stick) — rotate 360° backward</div></div>
               <div class="mv"><div class="a">←</div><div class="n">ROLL LEFT</div><div class="d">Full roll left (<kbd>←</kbd>) — barrel-roll 360° left</div></div>
               <div class="mv"><div class="a">→</div><div class="n">ROLL RIGHT</div><div class="d">Full roll right (<kbd>→</kbd>) — barrel-roll 360° right</div></div>
             </div>
@@ -452,19 +454,34 @@ var chart=[];                   // {t, dir:'back'|'front'|'left'|'right', judged
 var songDuration=0, songReady=false, chartSourceName='';
 var fileAudio=null, fileBuffer=null, fileName='';
 var spotStream=null, spotSource=null, spotAnalyser=null, spotLive=false, spotStartCtx=0;
-var DIRS=[{k:'back',arrow:'↑',label:'BACKFLIP'},{k:'front',arrow:'↓',label:'FRONTFLIP'},{k:'left',arrow:'←',label:'ROLL LEFT'},{k:'right',arrow:'→',label:'ROLL RIGHT'}];
+var DIRS=[{k:'front',arrow:'↑',label:'FRONTFLIP'},{k:'back',arrow:'↓',label:'BACKFLIP'},{k:'left',arrow:'←',label:'ROLL LEFT'},{k:'right',arrow:'→',label:'ROLL RIGHT'}];
 function dirInfo(k){ for(var i=0;i<DIRS.length;i++) if(DIRS[i].k===k) return DIRS[i]; return DIRS[0]; }
 /* ---------------- Phrasing helpers ----------------
    Calls land on phrase boundaries (multiples of N measures, 4 beats per
    measure), never on every beat. Occasionally a phrase gets a COMBO: a
    second call one measure after the first, mirroring real burst flying. */
 function phraseMeasures(diff){
+  if(diff==='phrase2') return 2;
   if(diff==='phrase4') return 4;
   if(diff==='phrase16') return 16;
   if(diff==='phrase8') return 8;
-  return 0; // 0 = legacy every-beat chart
+  return 0; // 0 = legacy every-beat chart (or variable, handled separately)
 }
-function isPhraseDiff(diff){ return phraseMeasures(diff)>0; }
+function isVariableDiff(diff){ return diff==='variable'; }
+function isPhraseDiff(diff){ return phraseMeasures(diff)>0 || isVariableDiff(diff); }
+function spacingLabel(diff){
+  if(isVariableDiff(diff)) return 'variable 2–8 meas';
+  var pm=phraseMeasures(diff);
+  return pm? 'phrasing /'+pm+' meas' : 'legacy';
+}
+/* Gap (in beats) to the next call when extending a live chart.
+   Variable cycles a burst/cruise pattern: 2, 4, 2, 4, 8, 4 measures. */
+var VAR_GAP_MEAS=[2,4,2,4,8,4];
+function gapBeatsFor(diff, idx){
+  if(isVariableDiff(diff)) return VAR_GAP_MEAS[Math.abs(idx)%VAR_GAP_MEAS.length]*4;
+  var pm=phraseMeasures(diff);
+  return (pm>0? pm : 8)*4;
+}
 var spotAutoBPM=0, spotAutoConf=0, spotManualOverride=false, spotChartBpm=0;
 var spotPhaseAligned=false; // true only while spotStartCtx sits ON a detected beat
 function manualSpotBpm(){ return clamp(parseInt($('spotBpm').value,10)||120,40,260); }
@@ -474,11 +491,33 @@ function currentBpm(){
   return fileBPM||120;
 }
 function makePhraseNotes(opts){
-  // opts: {bpm, duration, measures, intensityAt(t)->0..1|null, seed}
-  var spb=60/opts.bpm, beatsPerPhrase=opts.measures*4, notes=[];
+  // opts: {bpm, duration, measures, variable, intensityAt(t)->0..1|null, seed}
+  var spb=60/opts.bpm, beatsPerPhrase=(opts.measures||8)*4, notes=[];
   var seed=opts.seed||11; function rnd(){ seed=(seed*16807)%2147483647; return seed/2147483647; }
   var seq=['back','right','front','left','right','back','left','front','front','right','back','left'];
-  var n=0, firstPhrase=2; // skip the first 2 measures — settle in and cruise first
+  var n=0;
+  if(opts.variable){
+    // VARIABLE DENSITY (new default): gaps change phrase to phrase —
+    // mostly 2 or 4 measures, an occasional 8-measure cruise break, and
+    // tighter gaps + more combos in high-intensity sections. Average gap
+    // is roughly half the old fixed 8-measure spacing, so calls land
+    // about twice as often without becoming an every-beat chart.
+    var tV=8*spb; // first call after 2 measures — settle in briefly first
+    var guardV=0;
+    while(tV<opts.duration-2 && guardV++<600){
+      var intenV=opts.intensityAt? opts.intensityAt(tV) : 0.5;
+      notes.push({t:tV, dir:seq[n%seq.length], judged:false, combo:false}); n++;
+      var comboV = (intenV!==null && intenV>0.62) ? rnd()<0.60 : rnd()<0.30;
+      if(comboV && tV+4*spb<opts.duration-1.5){ notes.push({t:tV+4*spb, dir:seq[(n+2)%seq.length], judged:false, combo:true}); n++; tV+=4*spb; }
+      var rV=rnd(), gapMeas;
+      if(intenV!==null && intenV>0.62) gapMeas = rV<0.45?2 : rV<0.90?4 : 8;
+      else gapMeas = rV<0.30?2 : rV<0.90?4 : 8;
+      tV+=gapMeas*4*spb;
+    }
+    notes.sort(function(a,b){return a.t-b.t;});
+    return notes;
+  }
+  var firstPhrase=2; // skip the first 2 measures — settle in and cruise first
   var totalPhrases=Math.floor((opts.duration/spb)/beatsPerPhrase);
   for(var p=firstPhrase;p<totalPhrases;p++){
     var t=p*beatsPerPhrase*spb;
@@ -504,9 +543,17 @@ function demoChart(diff){
   if(demoChartCache[diff]) return demoChartCache[diff];
   var spb=60/DEMO_BPM, notes=[];
   var pm=phraseMeasures(diff);
+  if(isVariableDiff(diff)){
+    var durV=128*spb; // ~58 s at 132 BPM — enough for several bursts + cruises
+    notes=makePhraseNotes({bpm:DEMO_BPM, duration:durV, variable:true, seed:23,
+      intensityAt:function(t){ var beat=t/spb; return beat>64 ? 0.8 : 0.45; }});
+    demoChartCache[diff]={notes:notes,duration:durV};
+    return demoChartCache[diff];
+  }
   if(pm>0){
-    // Phrasing: six phrases of music so every spacing gets a full flight.
-    var dur=(pm*4*6+8)*spb;
+    // Phrasing: enough phrases of music so every spacing gets a full flight.
+    var phraseCount = pm===2?12 : pm===4?8 : 6;
+    var dur=(pm*4*phraseCount+8)*spb;
     notes=makePhraseNotes({bpm:DEMO_BPM, duration:dur, measures:pm, seed:23,
       intensityAt:function(t){ var beat=t/spb; return beat>pm*4*3 ? 0.8 : 0.45; }});
     demoChartCache[diff]={notes:notes,duration:dur};
@@ -618,10 +665,11 @@ function analyseBuffer(buf, diff){
   // snap phase: use first strong onset as grid anchor
   var anchor=onsets.length? onsets[0]%spb : 0;
   var pmF=phraseMeasures(diff);
-  if(pmF>0){
-    // Phrasing: calls only on phrase boundaries (anchor-shifted grid);
-    // intensity decides combos, not whether a call exists.
-    var phraseNotes=makePhraseNotes({bpm:bpm, duration:buf.duration, measures:pmF, seed:7,
+  if(pmF>0 || isVariableDiff(diff)){
+    // Phrasing / variable: calls only on measure boundaries (anchor-shifted
+    // grid); intensity tightens variable gaps and decides combos, not
+    // whether a call exists.
+    var phraseNotes=makePhraseNotes({bpm:bpm, duration:buf.duration, measures:pmF||8, variable:isVariableDiff(diff), seed:7,
       intensityAt:function(t){ return energyAt(t)/maxE; }});
     phraseNotes.forEach(function(nt){ nt.t+=anchor; });
     phraseNotes=phraseNotes.filter(function(nt){ return nt.t<buf.duration-1.5; });
@@ -785,7 +833,7 @@ function reanchorSpotifyChart(bpm, anchorCtx, isNewSong){
   spotChartBpm=bpm;
   if(anchorCtx && anchorCtx>0){ spotStartCtx=anchorCtx; spotPhaseAligned=true; }
   chart=spotifyChart(bpm);
-  chartSourceName='Spotify live — auto tempo ~'+bpm+' BPM'+(isNewSong?' · new song':'');
+  chartSourceName='Spotify live — auto tempo ~'+bpm+' BPM'+(isNewSong?' · new song':'')+' · '+spacingLabel($('spotDiff')? $('spotDiff').value : 'variable');
   if(state==='fly' && withChart){
     // Don't replay calls that are already in the past on the new grid.
     var nowT=songTime();
@@ -882,10 +930,13 @@ function setupSpotifyShare(){
   }).catch(function(e){ $('spotStatus').textContent='Share cancelled: '+e.message; $('spotStatus').className='statusline err'; });
 }
 function spotifyChart(bpm){
-  // Live mode follows the same phrasing: one call every 8 measures.
+  // Live mode follows the chosen spacing — variable by default (faster),
+  // otherwise the fixed phrase spacing picked in the Spotify pane.
   spotChartBpm=bpm;
+  var diff=($('spotDiff')? $('spotDiff').value : 'variable');
   var spb=60/bpm, dur=400*spb;
-  return makePhraseNotes({bpm:bpm, duration:dur, measures:8, seed:31, intensityAt:function(){ return 0.5; }});
+  if(isVariableDiff(diff)) return makePhraseNotes({bpm:bpm, duration:dur, variable:true, seed:31, intensityAt:function(){ return 0.5; }});
+  return makePhraseNotes({bpm:bpm, duration:dur, measures:phraseMeasures(diff)||8, seed:31, intensityAt:function(){ return 0.5; }});
 }
 
 /* =====================================================================
@@ -1778,8 +1829,7 @@ function prepareChartForMode(){
     var dc=demoChart($('demoDiff').value);
     chart=dc.notes.map(function(n){return {t:n.t,dir:n.dir,judged:false,combo:!!n.combo};});
     songDuration=dc.duration;
-    var pmD=phraseMeasures($('demoDiff').value);
-    chartSourceName='Demo — “Gates at Dusk” ('+DEMO_BPM+' BPM'+(pmD? ' · phrasing /'+pmD+' meas':' · legacy')+')';
+    chartSourceName='Demo — “Gates at Dusk” ('+DEMO_BPM+' BPM · '+spacingLabel($('demoDiff').value)+')';
     return true;
   }
   if(musicMode==='file'){
@@ -1790,7 +1840,7 @@ function prepareChartForMode(){
   if(musicMode==='spotify'){
     var bpm=currentBpm();
     chart=spotifyChart(bpm);
-    chartSourceName= spotManualOverride ? 'Spotify live ('+bpm+' BPM · manual override)' : (spotAutoBPM>0 ? 'Spotify live — detected ≈'+bpm+' BPM' : 'Spotify live · tempo not detected — grid on typed BPM until detection locks');
+    chartSourceName= (spotManualOverride ? 'Spotify live ('+bpm+' BPM · manual override' : (spotAutoBPM>0 ? 'Spotify live — detected ≈'+bpm+' BPM' : 'Spotify live · tempo not detected — grid on typed BPM until detection locks'))+' · '+spacingLabel($('spotDiff')? $('spotDiff').value : 'variable');
     return true;
   }
   return false;
@@ -1993,11 +2043,12 @@ function loop(nowMs){
     if(musicMode==='file' && withChart && state==='fly' && fileAudio && fileAudio.ended) finishTrack();
     if(musicMode==='spotify' && withChart && state==='fly' && chart.length){
       var lastN=chart[chart.length-1];
-      if(songTime() > lastN.t - 20){ // extend the phrase grid ahead of the song
+      if(songTime() > lastN.t - 20){ // extend the grid ahead of the song, at the chosen spacing
         var bpmS=currentBpm(), spbS=60/bpmS;
         var seqS=['right','back','left','front','front','left','back','right'];
-        var baseBeat=Math.round(lastN.t/spbS);
-        for(var si=1;si<=4;si++){ var bt=baseBeat+si*32; chart.push({t:bt*spbS, dir:seqS[(chart.length+si)%seqS.length], judged:false, combo:false}); }
+        var diffS=($('spotDiff')? $('spotDiff').value : 'variable');
+        var beatCursor=Math.round(lastN.t/spbS);
+        for(var si=1;si<=4;si++){ beatCursor+=gapBeatsFor(diffS, chart.length+si); chart.push({t:beatCursor*spbS, dir:seqS[(chart.length+si)%seqS.length], judged:false, combo:false}); }
         chart.sort(function(a,b){return a.t-b.t;});
       }
     }
@@ -2045,6 +2096,10 @@ $('fileInput').addEventListener('change',function(){
 $('fileDiff').addEventListener('change',function(){
   if(fileBuffer){ var res=analyseBuffer(fileBuffer,this.value); chart=res.notes; chartSourceName=fileName+' ('+res.bpm+' BPM)';
     $('fileStatus').textContent='Chart rebuilt: '+res.notes.length+' calls at ≈'+res.bpm+' BPM.'; $('fileStatus').className='statusline ok'; }
+});
+$('spotDiff').addEventListener('change',function(){
+  if(musicMode==='spotify' && state==='fly' && withChart) reanchorSpotifyChart(currentBpm(), spotPhaseAligned? liveTempo.anchorCtx : (AC?AC.currentTime:0), false);
+  else if(musicMode==='spotify'){ $('spotStatus').textContent='Call spacing set to '+spacingLabel(this.value)+' — it applies when you ARM & FLY (and rebuilds the live chart on the next tempo lock).'; $('spotStatus').className='statusline dim'; }
 });
 $('shareTabBtn').addEventListener('click',setupSpotifyShare);
 function setManualOverride(readout){
