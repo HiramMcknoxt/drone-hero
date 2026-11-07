@@ -1128,7 +1128,7 @@ function parseSplat(buf, flipYDown){
   }
   // recentre XZ on centroid, drop min-Y to 0 — splat exports vary wildly in origin
   var cx=0,cz=0; for(var j=0;j<count;j+=9){ cx+=pos[j*3]; cz+=pos[j*3+2]; } var n9=Math.ceil(count/9); cx/=n9; cz/=n9;
-  if(flipYDown){
+  if(false){ // GITHUB COPY ONLY (v4): the bundled chunk data is PRE-FLIPPED on disk, so the parse-time flip must not run here (the Space artifact copy keeps the flip and the unflipped hosted data).
     // WILLA FLIP — baked into the positions, deliberately NOT an object
     // rotation: the previous build set rotation.x = PI on the splat object
     // and the rendered scene verifiably never changed (checked live, twice,
