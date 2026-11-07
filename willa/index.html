@@ -2220,7 +2220,7 @@ function willaFetchBundled(){
   var jobs=[];
   for(var i=0;i<WILLA_PART_COUNT;i++){
     (function(n){
-      var name='assets/willa/part-'+(n<10?'0':'')+n+'.b64';
+      var name='assets/willa-v5/part-'+(n<10?'0':'')+n+'.b64';
       jobs.push(fetch(name).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status+' on '+name); return r.text(); })
         .then(function(txt){ var bin=atob(txt.replace(/\s+/g,'')); var ab=new ArrayBuffer(bin.length); var u8=new Uint8Array(ab); for(var k=0;k<bin.length;k++) u8[k]=bin.charCodeAt(k); if(ab.byteLength!==WILLA_PART_BYTES) throw new Error(name+' has wrong size'); return ab; }));
     })(i);
