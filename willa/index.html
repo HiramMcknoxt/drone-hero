@@ -950,8 +950,10 @@ var renderer, scene, camera, worldGroup=null, gateList=[], splatObj=null, splatN
    file bundled with this fork, tried if the hosted link can't be read. */
 var willaLoaded=false, willaSource='';
 var splatGrid=null; // orientation grid kept as a child of the splat object
+// COLLISION HOOK (future): SPLAT_FIELD holds the installed scene's gaussian arrays (pos / scale / quat / rgba, descending importance order). A future occupancy-grid builder for fly-through collision detection consumes these arrays at install time; nothing reads them for collision yet.
+var SPLAT_FIELD=null;
 var WILLA_URL='https://muse.ai/files/678388725354587/1439900574254971/kqo48ih5x2cyn86l3l4qfxok/willa.splat';
-var WILLA_PART_COUNT=24, WILLA_PART_BYTES=2000000, WILLA_TOTAL_BYTES=48000000; // bundled copy, chunked (see willaFetchBundled)
+var WILLA_PART_COUNT=12, WILLA_PART_BYTES=4000000, WILLA_TOTAL_BYTES=48000000; // bundled copy, chunked (see willaFetchBundled)
 var WILLA_SPAWN={x:0, y:15, z:44}; // above the scene's vertical middle (~27 tall once grounded), south edge, nose across it
 var ENV_DEFS={
   meadow:{sky:0x87b5d9, fog:0x9fc3dd, ground:0x4a7c43, sun:0xfff2d8, sunPos:[60,90,30], amb:0.75},
@@ -1044,6 +1046,8 @@ function updateEnvChip(){
 /* ---------------- Gaussian splat loader (.splat / .ply) ---------------- */
 function clearSplat(){
   var wasWilla=willaLoaded;
+  if(splatObj && splatObj.userData.gpu){ splatObj.remove(splatObj.userData.gpu.mesh); splatObj.userData.gpu.dispose(); splatObj.userData.gpu=null; }
+  splatGPU=null;
   if(splatObj){ scene.remove(splatObj); splatObj.geometry.dispose(); splatObj=null; splatName=''; }
   willaLoaded=false; willaSource='';
   splatGrid=null;
@@ -1065,6 +1069,19 @@ function installSplat(points, name, isWilla){
   splatGrid=grid;
   splatObj.add(grid);
   $('clearSplatBtn').style.display=''; applySplatTransform(); updateEnvChip();
+  // GPU splat renderer: if this splat carried full gaussian records and the
+  // GPU path builds, hide the point sprites and render real splats instead.
+  // A null result or any failure leaves the Points rendering exactly as-is.
+  if(points.userData.gaussians){
+    try{
+      var gpu=splatGPUBuild(points.userData.gaussians);
+      if(gpu){
+        splatObj.userData.gpu=gpu;
+        splatObj.add(gpu.mesh);
+        splatObj.material.visible=false;
+      }
+    }catch(gpuErr){ /* Points fallback stands */ }
+  }
 }
 function applySplatTransform(){
   if(!splatObj) return;
@@ -1110,6 +1127,15 @@ function loadSplatBuffer(buf, name){
     }
   },30);
 }
+/* Set true only in a published copy whose bundled chunk data was already
+   flipped on disk (positions pre-flipped): parseSplat then skips its
+   parse-time position flip so nothing double-flips. Gaussian orientations
+   are still flipped at parse time whenever flipYDown is set, pre-flipped
+   data or not, because the stored quaternions on disk are unflipped.
+   GITHUB COPY (v6 staging): the bundled chunk data IS pre-flipped on disk
+   (assets/willa-v5/), so this is set true at publish time; the Space
+   artifact copy keeps false with the unflipped hosted data. */
+var SPLAT_DATA_PREFLIPPED=true;
 function parseSplat(buf, flipYDown){
   var row=32, count=Math.floor(buf.byteLength/row);
   if(count<10) throw new Error('file too small to be a .splat');
@@ -1117,18 +1143,26 @@ function parseSplat(buf, flipYDown){
   // little-endian, as are the browsers this runs in) — identical values out,
   // but a 1.5M-gaussian file parses in a fraction of the DataView-loop time.
   var f32=new Float32Array(buf), u8=new Uint8Array(buf), pos=new Float32Array(count*3), col=new Float32Array(count*3), scl=new Float32Array(count);
+  // Full gaussian records for the GPU renderer: raw scale xyz, decoded +
+  // normalized rotation quaternion (x,y,z,w), raw color+alpha bytes.
+  var gScale=new Float32Array(count*3), gQuat=new Float32Array(count*4), gRGBA=new Uint8Array(count*4);
   var minY=1e9, maxY=-1e9;
   for(var i=0;i<count;i++){
     var o8=i*8, o=i*row;
     pos[i*3]=f32[o8]; pos[i*3+1]=f32[o8+1]; pos[i*3+2]=f32[o8+2];
     scl[i]=(f32[o8+3]+f32[o8+4]+f32[o8+5])/3;
     col[i*3]=u8[o+24]/255; col[i*3+1]=u8[o+25]/255; col[i*3+2]=u8[o+26]/255;
+    gScale[i*3]=f32[o8+3]; gScale[i*3+1]=f32[o8+4]; gScale[i*3+2]=f32[o8+5];
+    gRGBA[i*4]=u8[o+24]; gRGBA[i*4+1]=u8[o+25]; gRGBA[i*4+2]=u8[o+26]; gRGBA[i*4+3]=u8[o+27];
+    var qx=u8[o+28]/255*2-1, qy=u8[o+29]/255*2-1, qz=u8[o+30]/255*2-1, qw=u8[o+31]/255*2-1;
+    var qn=Math.sqrt(qx*qx+qy*qy+qz*qz+qw*qw)||1;
+    gQuat[i*4]=qx/qn; gQuat[i*4+1]=qy/qn; gQuat[i*4+2]=qz/qn; gQuat[i*4+3]=qw/qn;
     if(pos[i*3+1]<minY) minY=pos[i*3+1];
     if(pos[i*3+1]>maxY) maxY=pos[i*3+1];
   }
   // recentre XZ on centroid, drop min-Y to 0 — splat exports vary wildly in origin
   var cx=0,cz=0; for(var j=0;j<count;j+=9){ cx+=pos[j*3]; cz+=pos[j*3+2]; } var n9=Math.ceil(count/9); cx/=n9; cz/=n9;
-  if(false){ // GITHUB COPY ONLY (v4): the bundled chunk data is PRE-FLIPPED on disk, so the parse-time flip must not run here (the Space artifact copy keeps the flip and the unflipped hosted data).
+  if(flipYDown && !SPLAT_DATA_PREFLIPPED){
     // WILLA FLIP — baked into the positions, deliberately NOT an object
     // rotation: the previous build set rotation.x = PI on the splat object
     // and the rendered scene verifiably never changed (checked live, twice,
@@ -1146,12 +1180,32 @@ function parseSplat(buf, flipYDown){
   } else {
     for(var k=0;k<count;k++){ pos[k*3]-=cx; pos[k*3+2]-=cz; pos[k*3+1]-=minY; }
   }
+  if(flipYDown){
+    // ORIENTATION FLIP: the position flip is a 180-degree turn about X, so
+    // each gaussian's orientation must be premultiplied by the same rotation
+    // or elongated splats render with wrong orientations under the GPU
+    // renderer. A stored quat (x,y,z,w) premultiplied by the 180-degree-
+    // about-X quaternion (1,0,0,0) gives (w, -z, y, -x). This applies
+    // whenever flipYDown is set — including pre-flipped copies
+    // (SPLAT_DATA_PREFLIPPED), whose stored quaternions are still
+    // unflipped. The Points fallback never reads quaternions.
+    for(var q=0;q<count;q++){
+      var fxq=gQuat[q*4], fyq=gQuat[q*4+1], fzq=gQuat[q*4+2], fwq=gQuat[q*4+3];
+      gQuat[q*4]=fwq; gQuat[q*4+1]=-fzq; gQuat[q*4+2]=fyq; gQuat[q*4+3]=-fxq;
+    }
+  }
   var geo=new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
   geo.setAttribute('color', new THREE.BufferAttribute(col,3));
   var avg=0; for(var s=0;s<count;s+=9) avg+=scl[s]; avg/=n9;
   var mat=pointsMaterial(clamp(avg*1.6,0.05,1.2));
-  return new THREE.Points(geo,mat);
+  var pts=new THREE.Points(geo,mat);
+  // Full gaussian records for the GPU renderer; pos is the SAME
+  // recentered/flipped Float32Array the Points geometry above uses.
+  var field={count:count, pos:pos, scale:gScale, quat:gQuat, rgba:gRGBA};
+  pts.userData.gaussians=field;
+  SPLAT_FIELD=field;
+  return pts;
 }
 function parsePly(buf){
   var bytes=new Uint8Array(buf);
@@ -1200,6 +1254,273 @@ function parsePly(buf){
   // estimate extent for point size
   var ext=0; for(var e2=0;e2<count;e2+=13){ ext=Math.max(ext,Math.abs(pos[e2*3]),Math.abs(pos[e2*3+2])); }
   return new THREE.Points(geo, pointsMaterial(clamp(ext/220,0.06,1.4)));
+}
+
+/* =====================================================================
+   GPU GAUSSIAN SPLAT RENDERER
+   An original implementation of the published 3D Gaussian Splatting
+   method (Kerbl et al. 2023, "3D Gaussian Splatting for Real-Time
+   Radiance Field Rendering") with EWA surface-splat projection
+   (Zwicker et al., "Surface Splatting" / EWA volume splatting).
+   Written from the papers — no code taken from any existing splat
+   viewer. Each gaussian becomes one instanced quad: the vertex shader
+   projects its 3D covariance through the view matrix and the EWA
+   Jacobian to a 2D screen-space covariance, sizes an oriented quad to
+   3 sigma, and the fragment shader evaluates the Gaussian falloff with
+   premultiplied-alpha blending. A CPU radix sort orders the quads
+   back-to-front for correct alpha compositing. The THREE.Points path
+   above remains the fallback (PLY loads, WebGL1 contexts, or
+   ?splatpoints=1 in the URL).
+   ===================================================================== */
+
+/* Per-gaussian 3D covariance from a unit quaternion (x,y,z,w) and scale
+   (sx,sy,sz): builds R from the quaternion and returns the six unique
+   entries [cxx,cxy,cxz,cyy,cyz,czz] of Sigma = R * diag(s^2) * R^T. */
+function splatCovariance6(qx,qy,qz,qw, sx,sy,sz){
+  var x2=qx+qx, y2=qy+qy, z2=qz+qz;
+  var xx=qx*x2, xy=qx*y2, xz=qx*z2;
+  var yy=qy*y2, yz=qy*z2, zz=qz*z2;
+  var wx=qw*x2, wy=qw*y2, wz=qw*z2;
+  var r00=1-(yy+zz), r01=xy-wz,     r02=xz+wy;
+  var r10=xy+wz,     r11=1-(xx+zz), r12=yz-wx;
+  var r20=xz-wy,     r21=yz+wx,     r22=1-(xx+yy);
+  var dx=sx*sx, dy=sy*sy, dz=sz*sz;
+  return [
+    r00*r00*dx + r01*r01*dy + r02*r02*dz,
+    r00*r10*dx + r01*r11*dy + r02*r12*dz,
+    r00*r20*dx + r01*r21*dy + r02*r22*dz,
+    r10*r10*dx + r11*r11*dy + r12*r12*dz,
+    r10*r20*dx + r11*r21*dy + r12*r22*dz,
+    r20*r20*dx + r21*r21*dy + r22*r22*dz
+  ];
+}
+
+/* Offline-test mirror of the vertex shader's covariance projection.
+   cov6 is a splatCovariance6 result; mvE is the 16-element column-major
+   modelView matrix; (cx,cy,cz) is the gaussian center in model space;
+   fx/fy are the focal lengths in pixels. Computes the view-space center
+   t = M * (c,1), the view covariance Vw = W * Sigma * W^T (W = upper
+   3x3 of M), the EWA Jacobian J = [[fx/tz, 0, -fx*tx/tz^2],
+   [0, fy/tz, -fy*ty/tz^2], [0,0,0]], then cov2D = (J * Vw * J^T)
+   top-left 2x2 with the 0.3 low-pass filter added to both diagonal
+   entries. Returns [a,b,c]. Used only by offline numeric tests; the
+   live projection happens in the shader with identical formulas. */
+function splatProjectCovarianceJS(cov6, mvE, cx,cy,cz, fx,fy){
+  var tx=mvE[0]*cx + mvE[4]*cy + mvE[8]*cz + mvE[12];
+  var ty=mvE[1]*cx + mvE[5]*cy + mvE[9]*cz + mvE[13];
+  var tz=mvE[2]*cx + mvE[6]*cy + mvE[10]*cz + mvE[14];
+  var S=[[cov6[0],cov6[1],cov6[2]],[cov6[1],cov6[3],cov6[4]],[cov6[2],cov6[4],cov6[5]]];
+  var W=[[mvE[0],mvE[4],mvE[8]],[mvE[1],mvE[5],mvE[9]],[mvE[2],mvE[6],mvE[10]]];
+  function mul(A,B){ var R=[[0,0,0],[0,0,0],[0,0,0]]; for(var i=0;i<3;i++) for(var j=0;j<3;j++){ var s=0; for(var k=0;k<3;k++) s+=A[i][k]*B[k][j]; R[i][j]=s; } return R; }
+  function tr(A){ return [[A[0][0],A[1][0],A[2][0]],[A[0][1],A[1][1],A[2][1]],[A[0][2],A[1][2],A[2][2]]]; }
+  var Vw=mul(mul(W,S), tr(W));
+  var J=[[fx/tz, 0, -fx*tx/(tz*tz)],[0, fy/tz, -fy*ty/(tz*tz)],[0,0,0]];
+  var C2=mul(mul(J,Vw), tr(J));
+  return [C2[0][0]+0.3, C2[0][1], C2[1][1]+0.3];
+}
+
+// SPLAT DEPTH SORT — pure function of (positions, count, modelView elements); separable so it can move into a Web Worker unchanged.
+var _sortDepth=null, _sortKey=null, _sortA=null, _sortB=null, _sortCounts=new Uint32Array(256);
+function splatComputeOrder(positions, count, mvE, outArray){
+  if(!_sortDepth || _sortDepth.length<count){
+    _sortDepth=new Float32Array(count); _sortKey=new Uint16Array(count);
+    _sortA=new Uint32Array(count); _sortB=new Uint32Array(count);
+  }
+  var m2=mvE[2], m6=mvE[6], m10=mvE[10], m14=mvE[14];
+  var i, z, minZ=Infinity, maxZ=-Infinity;
+  for(i=0;i<count;i++){
+    z=m2*positions[i*3] + m6*positions[i*3+1] + m10*positions[i*3+2] + m14;
+    _sortDepth[i]=z;
+    if(z<minZ) minZ=z;
+    if(z>maxZ) maxZ=z;
+  }
+  var span=(maxZ-minZ)||1;
+  for(i=0;i<count;i++){
+    var key=Math.floor((_sortDepth[i]-minZ)/span*65535);
+    _sortKey[i]=key<0?0:(key>65535?65535:key);
+    _sortA[i]=i;
+  }
+  // two-pass 8-bit LSD radix (counting) sort, ascending key = ascending
+  // view z = farthest first (back-to-front for alpha blending)
+  var sum=0, t;
+  _sortCounts.fill(0);
+  for(i=0;i<count;i++) _sortCounts[_sortKey[i]&255]++;
+  for(i=0;i<256;i++){ t=_sortCounts[i]; _sortCounts[i]=sum; sum+=t; }
+  for(i=0;i<count;i++){ var ia=_sortA[i]; _sortB[_sortCounts[_sortKey[ia]&255]++]=ia; }
+  _sortCounts.fill(0);
+  for(i=0;i<count;i++) _sortCounts[(_sortKey[i]>>8)&255]++;
+  sum=0;
+  for(i=0;i<256;i++){ t=_sortCounts[i]; _sortCounts[i]=sum; sum+=t; }
+  for(i=0;i<count;i++){ var ib=_sortB[i]; _sortA[_sortCounts[(_sortKey[ib]>>8)&255]++]=ib; }
+  for(i=0;i<count;i++) outArray[i]=_sortA[i];
+}
+
+/* Active GPU renderer state for the currently installed splat, plus the
+   depth-sort bookkeeping splatPreRender maintains. */
+var splatGPU=null;
+var splatSort={lastTime:0, camPos:new THREE.Vector3(1e30,1e30,1e30), camQuat:new THREE.Quaternion(0,0,0,0), sortedRange:-1, range:0, objY:null, objScale:null, dirty:true};
+
+function splatGPUBuild(gaussians){
+  try{
+    if(/(^|[?&])splatpoints=1(&|$)/.test(location.search)) return null;
+    if(!renderer || !renderer.capabilities || !renderer.capabilities.isWebGL2) return null;
+    var count=gaussians.count;
+    var TW=2048, TH=Math.ceil(count/TW);
+    // Pack the gaussian records into data textures: position (+ largest
+    // scale component), the six covariance entries split across two
+    // textures, and the raw color/opacity bytes.
+    var posArr=new Float32Array(TW*TH*4), covAArr=new Float32Array(TW*TH*4), covBArr=new Float32Array(TW*TH*4);
+    var colArr=new Uint8Array(TW*TH*4);
+    for(var i=0;i<count;i++){
+      var sx=gaussians.scale[i*3], sy=gaussians.scale[i*3+1], sz=gaussians.scale[i*3+2];
+      var cov=splatCovariance6(gaussians.quat[i*4], gaussians.quat[i*4+1], gaussians.quat[i*4+2], gaussians.quat[i*4+3], sx, sy, sz);
+      posArr[i*4]=gaussians.pos[i*3]; posArr[i*4+1]=gaussians.pos[i*3+1]; posArr[i*4+2]=gaussians.pos[i*3+2];
+      posArr[i*4+3]=Math.max(sx, Math.max(sy, sz));
+      covAArr[i*4]=cov[0]; covAArr[i*4+1]=cov[1]; covAArr[i*4+2]=cov[2]; covAArr[i*4+3]=cov[3];
+      covBArr[i*4]=cov[4]; covBArr[i*4+1]=cov[5]; covBArr[i*4+2]=0; covBArr[i*4+3]=0;
+      colArr[i*4]=gaussians.rgba[i*4]; colArr[i*4+1]=gaussians.rgba[i*4+1]; colArr[i*4+2]=gaussians.rgba[i*4+2]; colArr[i*4+3]=gaussians.rgba[i*4+3];
+    }
+    function makeTex(data, type){
+      var t=new THREE.DataTexture(data, TW, TH, THREE.RGBAFormat, type);
+      t.minFilter=THREE.NearestFilter; t.magFilter=THREE.NearestFilter;
+      t.generateMipmaps=false; t.needsUpdate=true;
+      return t;
+    }
+    var texPos=makeTex(posArr, THREE.FloatType);
+    var texCovA=makeTex(covAArr, THREE.FloatType);
+    var texCovB=makeTex(covBArr, THREE.FloatType);
+    var texCol=makeTex(colArr, THREE.UnsignedByteType); // samples normalized 0..1
+    var geo=new THREE.InstancedBufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1,-1, 1,-1, 1,1, -1,1]), 2));
+    geo.setIndex([0,1,2, 0,2,3]);
+    // Draw order as a float attribute: integer attributes are unreliable
+    // under r128, and indices up to 1.5M are exact in float32.
+    var orderArr=new Float32Array(count);
+    for(var j=0;j<count;j++) orderArr[j]=j;
+    geo.setAttribute('aOrder', new THREE.InstancedBufferAttribute(orderArr, 1));
+    geo.instanceCount=count;
+    var vertexShader=[
+      '#define TEX_W '+TW,
+      'attribute float aOrder;',
+      'uniform sampler2D uTexPos;',
+      'uniform sampler2D uTexCovA;',
+      'uniform sampler2D uTexCovB;',
+      'uniform sampler2D uTexCol;',
+      'uniform vec2 uViewport;',
+      'varying vec4 vColor;',
+      'varying vec3 vConic;',
+      'varying vec2 vLocal;',
+      'void main(){',
+      '  vColor=vec4(0.0); vConic=vec3(0.0); vLocal=vec2(0.0);',
+      '  int idx=int(aOrder+0.5);',
+      '  ivec2 tc=ivec2(idx % TEX_W, idx / TEX_W);',
+      '  vec4 P=texelFetch(uTexPos, tc, 0);',
+      '  vec4 CA=texelFetch(uTexCovA, tc, 0);',
+      '  vec4 CB=texelFetch(uTexCovB, tc, 0);',
+      '  vec4 C=texelFetch(uTexCol, tc, 0);',
+      '  vec4 mv=modelViewMatrix*vec4(P.xyz, 1.0);',
+      '  vec4 clip=projectionMatrix*mv;',
+      '  mat3 W=mat3(modelViewMatrix);',
+      '  mat3 Sigma=mat3(CA.x, CA.y, CA.z,  CA.y, CA.w, CB.x,  CA.z, CB.x, CB.y);',
+      '  mat3 Vw=W*Sigma*transpose(W);',
+      '  float fx=0.5*uViewport.x*projectionMatrix[0][0];',
+      '  float fy=0.5*uViewport.y*projectionMatrix[1][1];',
+      '  float tz=mv.z;',
+      '  mat3 J=mat3(fx/tz, 0.0, 0.0,  0.0, fy/tz, 0.0,  -fx*mv.x/(tz*tz), -fy*mv.y/(tz*tz), 0.0);',
+      '  mat3 cov=J*Vw*transpose(J);',
+      '  float a=cov[0][0]+0.3;',
+      '  float b=cov[0][1];',
+      '  float c=cov[1][1]+0.3;',
+      '  float det=a*c-b*b;',
+      '  if(mv.z > -0.12 || C.a <= 0.003 || det <= 1e-9){',
+      '    gl_Position=vec4(2.0, 2.0, 2.0, 1.0);',
+      '    return;',
+      '  }',
+      '  vConic=vec3(c/det, -b/det, a/det);',
+      '  float mid=0.5*(a+c);',
+      '  float disc=sqrt(max(0.1, mid*mid-det));',
+      '  float l1=mid+disc;',
+      '  float l2=max(mid-disc, 0.0);',
+      '  float r1=min(3.0*sqrt(l1), 1200.0);',
+      '  float r2=min(3.0*sqrt(l2), 1200.0);',
+      '  vec2 evec;',
+      '  if(abs(b) > 1e-7) evec=normalize(vec2(b, l1-a));',
+      '  else evec=(a >= c)? vec2(1.0, 0.0) : vec2(0.0, 1.0);',
+      '  vec2 axis1=evec*r1;',
+      '  vec2 axis2=vec2(-evec.y, evec.x)*r2;',
+      '  vec2 offsetPx=axis1*position.x + axis2*position.y;',
+      '  vLocal=offsetPx;',
+      '  vColor=C;',
+      '  gl_Position=clip + vec4(offsetPx*(2.0/uViewport)*clip.w, 0.0, 0.0);',
+      '}'
+    ].join('\n');
+    var fragmentShader=[
+      'varying vec4 vColor;',
+      'varying vec3 vConic;',
+      'varying vec2 vLocal;',
+      'void main(){',
+      '  float power=-0.5*(vConic.x*vLocal.x*vLocal.x + vConic.z*vLocal.y*vLocal.y) - vConic.y*vLocal.x*vLocal.y;',
+      '  if(power < -9.0) discard;',
+      '  float alpha=vColor.a*exp(power);',
+      '  if(alpha < 0.004) discard;',
+      '  gl_FragColor=vec4(vColor.rgb*alpha, alpha);',
+      '}'
+    ].join('\n');
+    var mat=new THREE.ShaderMaterial({
+      uniforms:{
+        uTexPos:{value:texPos}, uTexCovA:{value:texCovA}, uTexCovB:{value:texCovB}, uTexCol:{value:texCol},
+        uViewport:{value:new THREE.Vector2(1,1)}
+      },
+      vertexShader:vertexShader,
+      fragmentShader:fragmentShader,
+      transparent:true, depthWrite:false, depthTest:true,
+      blending:THREE.CustomBlending, blendEquation:THREE.AddEquation,
+      blendSrc:THREE.OneFactor, blendDst:THREE.OneMinusSrcAlphaFactor
+    });
+    var mesh=new THREE.Mesh(geo, mat);
+    mesh.frustumCulled=false;
+    mesh.renderOrder=10;
+    var api={
+      mesh:mesh,
+      setCount:function(n){ geo.instanceCount=n; },
+      dispose:function(){ geo.dispose(); mat.dispose(); texPos.dispose(); texCovA.dispose(); texCovB.dispose(); texCol.dispose(); }
+    };
+    splatGPU=api;
+    splatSort.range=count; splatSort.sortedRange=-1; splatSort.dirty=true; splatSort.lastTime=0;
+    return api;
+  }catch(e){ return null; }
+}
+
+var _splatMV=new THREE.Matrix4(), _splatSize=new THREE.Vector2();
+function splatPreRender(){
+  var gpu=splatGPU;
+  if(!gpu || !splatObj || !splatObj.userData.gpu) return;
+  renderer.getDrawingBufferSize(_splatSize);
+  gpu.mesh.material.uniforms.uViewport.value.set(_splatSize.x, _splatSize.y);
+  var field=(SPLAT_FIELD && SPLAT_FIELD.pos)? SPLAT_FIELD : splatObj.userData.gaussians;
+  if(!field) return;
+  var range=Math.min(splatSort.range, field.count);
+  var camMoved=camera.position.distanceToSquared(splatSort.camPos)>0.25;
+  var camRotated=splatSort.camQuat.dot(camera.quaternion)<0.9995;
+  var objMoved=splatObj.position.y!==splatSort.objY || splatObj.scale.x!==splatSort.objScale;
+  var needSort=splatSort.dirty || range!==splatSort.sortedRange || camMoved || camRotated || objMoved;
+  if(!needSort) return;
+  var now=performance.now();
+  if(now-splatSort.lastTime<90){ splatSort.dirty=true; return; } // throttled — remembered, retried after the window
+  camera.updateMatrixWorld();
+  splatObj.updateMatrixWorld();
+  _splatMV.multiplyMatrices(camera.matrixWorldInverse, gpu.mesh.matrixWorld);
+  var attr=gpu.mesh.geometry.getAttribute('aOrder');
+  splatComputeOrder(field.pos, range, _splatMV.elements, attr.array);
+  attr.needsUpdate=true;
+  gpu.setCount(range);
+  splatSort.camPos.copy(camera.position);
+  splatSort.camQuat.copy(camera.quaternion);
+  splatSort.objY=splatObj.position.y;
+  splatSort.objScale=splatObj.scale.x;
+  splatSort.sortedRange=range;
+  splatSort.lastTime=now;
+  splatSort.dirty=false;
 }
 
 /* =====================================================================
@@ -2115,6 +2436,7 @@ function loop(nowMs){
       }
     }
   }
+  splatPreRender();
   willaAdaptiveQuality();
   if(renderer){ renderer.render(scene,camera); }
   sampleCalibration(); tickRadioUI(nowMs);
@@ -2213,16 +2535,16 @@ $('splatScale').addEventListener('input',applySplatTransform);
 $('splatY').addEventListener('input',applySplatTransform);
 /* ---------------- Willa fork: auto-load the Willa scene ---------------- */
 function willaFetchBundled(){
-  // The bundled copy ships as 24 x 2 MB chunks: a single 48 MB response is
+  // The bundled copy ships as 12 x 4 MB chunks: a single 48 MB response is
   // exactly the kind of transfer that gets refused or cut off in transit,
   // while 4 MB parts sail through. Reassembled byte-for-byte (verified by
   // total length) before hitting the game's normal .splat loader.
   var jobs=[];
   for(var i=0;i<WILLA_PART_COUNT;i++){
     (function(n){
-      var name='assets/willa-v5/part-'+(n<10?'0':'')+n+'.b64';
-      jobs.push(fetch(name).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status+' on '+name); return r.text(); })
-        .then(function(txt){ var bin=atob(txt.replace(/\s+/g,'')); var ab=new ArrayBuffer(bin.length); var u8=new Uint8Array(ab); for(var k=0;k<bin.length;k++) u8[k]=bin.charCodeAt(k); if(ab.byteLength!==WILLA_PART_BYTES) throw new Error(name+' has wrong size'); return ab; }));
+      var name='assets/willa/part-'+(n<10?'0':'')+n+'.bin';
+      jobs.push(fetch(name).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status+' on '+name); return r.arrayBuffer(); })
+        .then(function(ab){ if(ab.byteLength!==WILLA_PART_BYTES) throw new Error(name+' has wrong size'); return ab; }));
     })(i);
   }
   return Promise.all(jobs).then(function(parts){
@@ -2258,11 +2580,13 @@ function willaAdaptiveQuality(){
   var full=splatObj.geometry.attributes.position.count;
   if((dt>500 || willaQ.ema>110) && willaQ.range>120000){
     willaQ.range=Math.max(120000, Math.floor(willaQ.range*0.5));
-    splatObj.geometry.setDrawRange(0, willaQ.range);
+    if(splatObj.userData.gpu){ splatObj.userData.gpu.setCount(willaQ.range); splatSort.range=willaQ.range; splatSort.dirty=true; }
+    else splatObj.geometry.setDrawRange(0, willaQ.range);
     willaQ.next=now+800;
   } else if(willaQ.ema<28 && willaQ.range<full){
     willaQ.range=Math.min(full, Math.floor(willaQ.range*1.5));
-    splatObj.geometry.setDrawRange(0, willaQ.range);
+    if(splatObj.userData.gpu){ splatObj.userData.gpu.setCount(willaQ.range); splatSort.range=willaQ.range; splatSort.dirty=true; }
+    else splatObj.geometry.setDrawRange(0, willaQ.range);
     willaQ.next=now+3000;
   }
 }
