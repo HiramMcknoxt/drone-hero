@@ -212,7 +212,7 @@ a{color:var(--cyan)}
       <div class="menuCard">
         <h1>DRONE <b>HERO</b> <span style="color:var(--amber)">— RICHIE ROAD</span></h1>
         <p class="lede">A real acro-mode FPV flight sim built around <b style="color:var(--ink)">phrasing</b> — how lyrical freestyle is actually flown. A soft pulse keeps time on every beat (stronger on the downbeat) but never demands anything. Maneuver calls land only on phrase boundaries, with room to cruise, set up, and send it. You score by <b style="color:var(--ink)">when your rotation completes</b> against the called beat — dead-on pays most, early or late still pays on a graded scale, and a clean, unhurried flip with a held apex earns style credit. Free-fly anytime.</p>
-        <p style="border:1px solid var(--amber);border-radius:8px;padding:10px 13px;background:rgba(255,176,0,.07);font-size:12.5px;line-height:1.6"><b style="color:var(--amber)">RICHIE ROAD FORK —</b> this build flies the <b style="color:var(--ink)">Richie Road Park scene</b> by default: a trained Gaussian splat (955,376 gaussians of Richie Road Park in Cabot, Arkansas, trained with Nerfstudio splatfacto from an Avata 360 flight) that loads automatically — see pane 2. Everything else — acro physics, phrasing calls, Spotify auto-tempo, radio support — is the main Drone Hero build, unchanged, and the main build itself is untouched. If the Richie Road scene can't load, this fork falls back to the built-in courses and stays fully playable.</p>
+        <p style="border:1px solid var(--amber);border-radius:8px;padding:10px 13px;background:rgba(255,176,0,.07);font-size:12.5px;line-height:1.6"><b style="color:var(--amber)">RICHIE ROAD FORK —</b> this build flies the <b style="color:var(--ink)">Richie Road Park scene</b> by default: a trained Gaussian splat (530,648 gaussians of Richie Road Park in Cabot, Arkansas, trained with Nerfstudio splatfacto from the Nov 7, 2026 Avata 360 flight) that loads automatically — see pane 2. Everything else — acro physics, phrasing calls, Spotify auto-tempo, radio support — is the main Drone Hero build, unchanged, and the main build itself is untouched. If the Richie Road scene can't load, this fork falls back to the built-in courses and stays fully playable.</p>
 
         <div class="cols">
           <div class="pane">
@@ -262,7 +262,7 @@ a{color:var(--cyan)}
 
           <div class="pane">
             <h2>2 · ENVIRONMENT <span>/ RICHIE ROAD SCENE</span></h2>
-            <p><b style="color:var(--amber)">Richie Road Park is the default world in this fork.</b> On load, the game automatically fetches the Richie Road splat (<b style="color:var(--ink)">richie.splat</b> — 955,376 gaussians, the full trained scene, no decimation) and starts you low and close over the park's dense core. This splat's gaussians are fine-grained — the scene reads best up close to surfaces, not from a high, wide overview. Free flight is the point here; the built-in gate courses stay available from the Course menu below, and every splat option from the main build (file picker, drag-and-drop, URL) still works. Or fly the built-in course instead, or load a <b style="color:var(--ink)">Gaussian Splat of your own spot</b> — e.g. captured with your Avata 360, processed in DJI Studio / Luma / Postshot / Nerfstudio (export <b style="color:var(--ink)">.splat</b> or gaussian <b style="color:var(--ink)">.ply</b>). The splat becomes the world you fly in; the same physics and flat ground plane apply underneath it. This scene was trained from a Z-up Nerfstudio export, so its orientation is baked into the bundled data — if it ever renders upside down in your browser, the <b style="color:var(--ink)">Flip scene</b> button below corrects it live, no reload needed.</p>
+            <p><b style="color:var(--amber)">Richie Road Park is the default world in this fork.</b> On load, the game automatically fetches the Richie Road splat (<b style="color:var(--ink)">richie.splat</b> — 530,648 gaussians, the full trained scene, no decimation) and starts you low and close inside the park's dense core. This scene is the Nov 7, 2026 low flight corridor through the canopy — it reads best up close to surfaces, not from a high, wide overview. Free flight is the point here; the built-in gate courses stay available from the Course menu below, and every splat option from the main build (file picker, drag-and-drop, URL) still works. Or fly the built-in course instead, or load a <b style="color:var(--ink)">Gaussian Splat of your own spot</b> — e.g. captured with your Avata 360, processed in DJI Studio / Luma / Postshot / Nerfstudio (export <b style="color:var(--ink)">.splat</b> or gaussian <b style="color:var(--ink)">.ply</b>). The splat becomes the world you fly in; the same physics and flat ground plane apply underneath it. This scene was trained from a Z-up Nerfstudio export, so its orientation is baked into the bundled data — if it ever renders upside down in your browser, the <b style="color:var(--ink)">Flip scene</b> button below corrects it live, no reload needed.</p>
             <div class="row">
               <label class="ck">Course
               <select id="envSelect">
@@ -283,11 +283,11 @@ a{color:var(--cyan)}
             </div>
             <div class="row">
               <label class="ck">Splat scale <input type="range" id="splatScale" min="0.2" max="5" step="0.1" value="1" style="width:110px" /> <span id="splatScaleVal">1.0×</span></label>
-              <label class="ck">Height offset <input type="range" id="splatY" min="-90" max="20" step="0.01" value="-52.439" style="width:110px" /> <span id="splatYVal">-52.44 m</span></label>
+              <label class="ck">Height offset <input type="range" id="splatY" min="-90" max="20" step="0.01" value="-1.523" style="width:110px" /> <span id="splatYVal">-1.52 m</span></label>
               <button class="ghostbtn" id="clearSplatBtn" style="display:none">Unload splat</button>
               <button class="ghostbtn" id="flipSceneBtn" title="Runtime vertical flip — use if the scene renders upside down">Flip scene</button>
             </div>
-            <div class="statusline dim" id="splatStatus">Loading Richie Road Park scene… fetching richie.splat (955,376 splats · 31 MB) — setup and free-fly work while it loads.</div>
+            <div class="statusline dim" id="splatStatus">Loading Richie Road Park scene… fetching richie.splat (530,648 splats · 17 MB) — setup and free-fly work while it loads.</div>
             <details>
               <summary>How to make a splat from Avata 360 footage</summary>
               <ul>
@@ -948,12 +948,12 @@ function spotifyChart(bpm){
 var renderer, scene, camera, worldGroup=null, gateList=[], splatObj=null, splatName='';
 /* Richie Road fork: the Richie Road Park splat is the default environment.
    There is no hosted copy — the scene ships bundled with this fork as base64
-   chunks under assets/richie-v1/ (see willaFetchBundled). */
+   chunks under assets/richie-v2/ (see willaFetchBundled). */
 var willaLoaded=false, willaSource='';
 var splatGrid=null; // orientation grid kept as a child of the splat object
 var WILLA_URL=''; // Richie fork: bundled chunks only, no hosted copy
-var WILLA_PART_COUNT=16, WILLA_PART_BYTES=2000000, WILLA_TOTAL_BYTES=30572032; // bundled copy, chunked (see willaFetchBundled)
-var WILLA_SPAWN={x:0, y:3, z:6}; // Richie Road: LOW and CLOSE — 3 up, just inside the park core's south half, near the densest cluster's centroid. This splat's gaussians are ~20x finer than Willa's relative to scene size, so the scene resolves up close, not from a high overview.
+var WILLA_PART_COUNT=9, WILLA_PART_BYTES=2000000, WILLA_TOTAL_BYTES=16980736; // bundled copy, chunked (see willaFetchBundled)
+var WILLA_SPAWN={x:0, y:0.08, z:0.05}; // Richie Road v2 (Nov 7, 2026 flight, GLOMAP low-phase dataset): LOW and CLOSE — 0.08 up (mid-canopy height in this normalized-scale scene), just south of the densest cluster's centroid (0.013, -0.004). The scene core is ~0.37 x 0.24 units (p1-p99), a low corridor through the canopy, so spawn sits inside it, not above it.
 var ENV_DEFS={
   meadow:{sky:0x87b5d9, fog:0x9fc3dd, ground:0x4a7c43, sun:0xfff2d8, sunPos:[60,90,30], amb:0.75},
   sunset:{sky:0xe8905a, fog:0xd98a5e, ground:0x5d7040, sun:0xffc37a, sunPos:[-80,22,-40], amb:0.6},
@@ -1077,9 +1077,9 @@ function applySplatTransform(){
   // scale + height offset the sliders describe. (The Willa fork's history
   // showed an object rotation.x = PI never changed the rendered scene,
   // which is why orientation lives in the data; the Flip scene button is
-  // the live escape hatch.) Height offset default (-52.439) grounds this
+  // the live escape hatch.) Height offset default (-1.523) grounds this
   // scene: parseSplat drops its min-Y to 0, which leaves the trained
-  // ground slab at +52.439 — the offset puts it back on the y=0 plane.
+  // ground slab at +1.523 — the offset puts it back on the y=0 plane.
   splatObj.rotation.x=0;
   splatObj.position.y=yOff;
   if(splatGrid) splatGrid.position.y=0.02;
@@ -1100,15 +1100,16 @@ function loadSplatBuffer(buf, name){
       installSplat(pts, isWilla? 'Richie Road Park — richie.splat' : name, isWilla);
       var count=pts.geometry.attributes.position.count;
       if(isWilla){
-        // Richie point-size bias: this splat's gaussians are ~20x finer than
-        // Willa's relative to scene extent (median per-gaussian scale ~0.001
-        // scene units; the stock parse formula bottoms out at 0.05 and the
-        // park reads as faint dust). Bias the sprite size toward the large
-        // end of the range the main build allows (its clamp caps at 1.2).
-        pts.material.size=0.35; pts.material.needsUpdate=true;
+        // Richie point-size bias (v2): this splat's gaussians are relatively
+        // LARGE for its scene (median scale = 0.22% of mean scene extent),
+        // and the stock parse formula bottoms out at 0.05, which at this
+        // scene's ~0.1-unit working distances would bloat the sprites.
+        // 0.03 is ~28x the parse-sampled mean scale (0.00108) — the same
+        // override ratio v1 used (0.35 = ~33x its mean scale of 0.0107).
+        pts.material.size=0.03; pts.material.needsUpdate=true;
         willaLoaded=true;
         willaQ.range=count; willaQ.ema=16; willaQ.last=0; willaQ.next=0;
-        if(renderer) renderer.setPixelRatio(1); // 1.5M points: hold frame rate on modest GPUs
+        if(renderer) renderer.setPixelRatio(1); // hold frame rate on modest GPUs
         if(state==='menu'||state==='crash') resetDrone(); // Richie start: low and close over the park core, looking across it
         $('splatStatus').textContent='Richie Road Park scene loaded ✓ '+count.toLocaleString()+' gaussians'+(srcNote? ' ('+srcNote+')':'')+'. You start low and close over the park core — this scene resolves up close, so fly near the surfaces. ARM & FLY, and R returns you to the Richie Road start anytime. If the park renders upside down, tap “Flip scene”.';
       } else {
@@ -2264,7 +2265,7 @@ function willaFetchBundled(){
   var jobs=[];
   for(var i=0;i<WILLA_PART_COUNT;i++){
     (function(n){
-      var name='assets/richie-v1/part-'+(n<10?'0':'')+n+'.b64';
+      var name='assets/richie-v2/part-'+(n<10?'0':'')+n+'.b64';
       jobs.push(fetch(name).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status+' on '+name); return r.text(); })
         .then(function(txt){ var bin=atob(txt.replace(/\s+/g,'')); var ab=new ArrayBuffer(bin.length); var u8=new Uint8Array(ab); for(var k=0;k<bin.length;k++) u8[k]=bin.charCodeAt(k); var want=(n<WILLA_PART_COUNT-1)? WILLA_PART_BYTES : (WILLA_TOTAL_BYTES-WILLA_PART_BYTES*(WILLA_PART_COUNT-1)); if(ab.byteLength!==want) throw new Error(name+' has wrong size'); return ab; }));
     })(i);
@@ -2291,7 +2292,7 @@ function willaUnavailable(){
    frames are genuinely slow (e.g. software rendering); a healthy GPU sits at
    full 1.5M and never triggers it, and density steps back up when frames
    recover. */
-var willaQ={range:955376, ema:16, last:0, next:0};
+var willaQ={range:530648, ema:16, last:0, next:0};
 function willaAdaptiveQuality(){
   if(!willaLoaded || !splatObj) return;
   var now=performance.now();
@@ -2311,7 +2312,7 @@ function willaAdaptiveQuality(){
   }
 }
 function loadWillaScene(){
-  $('splatStatus').textContent='Loading Richie Road Park scene… fetching richie.splat (955,376 splats · 31 MB) — setup and free-fly work while it loads.';
+  $('splatStatus').textContent='Loading Richie Road Park scene… fetching richie.splat (530,648 splats · 17 MB) — setup and free-fly work while it loads.';
   $('splatStatus').className='statusline dim';
   $('envChip').innerHTML='Environment: <b>Richie Road Park</b> · loading scene…';
   willaFetchBundled()
