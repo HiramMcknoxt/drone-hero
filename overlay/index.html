@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drone Hero — Chart Overlay</title>
+<style>
+  :root{--amber:#ffb400;--ink:#f2f2f2;--dim:#9a9a9a;--panel:rgba(12,12,14,.82);--good:#39d98a;--perf:#ffd94d;--bad:#ff5470}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:#101014}
+  body.obs{background:transparent}
+  body.obs #panel,body.obs #help{display:none}
+  #stage{position:relative;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:18px 14px 30px;gap:10px}
+  #brand{font-weight:800;letter-spacing:.22em;font-size:13px;color:var(--amber);text-shadow:0 2px 8px #000}
+  #song{font-size:15px;color:var(--ink);text-shadow:0 2px 8px #000;text-align:center}
+  #section{font-size:12px;letter-spacing:.3em;color:var(--dim);text-transform:uppercase;text-shadow:0 2px 8px #000}
+  #pulseWrap{display:flex;align-items:center;gap:14px;margin-top:2px}
+  #pulse{width:26px;height:26px;border-radius:50%;background:#333;border:2px solid #555;transition:transform .05s}
+  #pulse.beat{background:var(--amber);transform:scale(1.25)}
+  #pulse.down{background:#fff;transform:scale(1.5)}
+  #barInfo{font-variant-numeric:tabular-nums;font-size:14px;color:var(--dim);text-shadow:0 2px 8px #000}
+  #nextBox{margin-top:8px;text-align:center;min-height:210px}
+  #nextLbl{font-size:12px;letter-spacing:.28em;color:var(--dim)}
+  #nextArr{font-size:120px;line-height:1;font-weight:900;text-shadow:0 6px 24px #000}
+  #nextName{font-size:30px;font-weight:800;letter-spacing:.12em;text-shadow:0 3px 12px #000}
+  #nextIn{font-size:17px;color:var(--amber);font-variant-numeric:tabular-nums;text-shadow:0 2px 8px #000}
+  #nextBox.now #nextArr{color:var(--perf);transform:scale(1.12)}
+  #nextBox.now #nextName{color:var(--perf)}
+  #queue{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:6px;max-width:720px}
+  .chip{background:var(--panel);border:1px solid #333;border-radius:999px;padding:6px 12px;font-size:13px;font-variant-numeric:tabular-nums}
+  .chip b{color:var(--amber)}
+  .chip.combo{border-color:var(--perf)}
+  #judge{font-size:26px;font-weight:900;letter-spacing:.2em;min-height:34px;text-shadow:0 3px 12px #000}
+  #score{font-size:13px;color:var(--dim);font-variant-numeric:tabular-nums}
+  #panel{background:var(--panel);border:1px solid #2c2c30;border-radius:12px;padding:14px 16px;max-width:760px;width:100%;margin-top:14px}
+  #panel h2{margin:0 0 8px;font-size:14px;letter-spacing:.14em;color:var(--amber)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+  button{background:#1d1d22;color:var(--ink);border:1px solid #3a3a40;border-radius:8px;padding:8px 14px;font-size:14px;cursor:pointer}
+  button.primary{background:var(--amber);color:#141414;border-color:var(--amber);font-weight:800}
+  input[type=number]{width:74px;background:#141417;color:var(--ink);border:1px solid #3a3a40;border-radius:6px;padding:7px}
+  input[type=text]{background:#141417;color:var(--ink);border:1px solid #3a3a40;border-radius:6px;padding:7px;min-width:230px}
+  label{font-size:13px;color:var(--dim)}
+  #status{font-size:13px;color:var(--dim);min-height:18px}
+  #help{max-width:760px;font-size:13px;color:var(--dim);line-height:1.55}
+  kbd{background:#222;border:1px solid #444;border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:12px}
+  audio{width:100%;margin-top:6px}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="brand">DRONE HERO</div>
+  <div id="song">Dimension — DJ Turn It Up · 174 BPM · Pilot 001</div>
+  <div id="section">LOAD A SONG OR PRESS GO</div>
+  <div id="pulseWrap"><div id="pulse"></div><div id="barInfo">BAR – · BEAT – · 0:00 / 0:00</div></div>
+
+  <div id="nextBox">
+    <div id="nextLbl">NEXT CALL</div>
+    <div id="nextArr">·</div>
+    <div id="nextName">STANDBY</div>
+    <div id="nextIn"></div>
+  </div>
+  <div id="judge"></div>
+  <div id="queue"></div>
+  <div id="score"></div>
+
+  <div id="panel">
+    <h2>CHART OVERLAY — CONTROL</h2>
+    <div class="row">
+      <label>Song file <input type="file" id="file" accept="audio/*"></label>
+      <button id="usePreset" class="primary">Use pilot chart (DJ Turn It Up)</button>
+      <button id="genChart">Generate chart from BPM</button>
+    </div>
+    <div class="row">
+      <label>BPM <input type="number" id="bpm" value="174" min="60" max="220" step="0.5"></label>
+      <label>Title <input type="text" id="title" value="Dimension — DJ Turn It Up"></label>
+      <label>Sync offset (s) <input type="number" id="offset" value="0" step="0.1" min="-5" max="5"></label>
+    </div>
+    <div class="row">
+      <button id="go" class="primary">▶ GO — manual clock (no file)</button>
+      <button id="stop">■ Stop</button>
+      <button id="minus">−0.1s</button><button id="plus">+0.1s</button>
+      <button id="obs">OBS transparent mode</button>
+      <button id="hideUi">Hide panel (H)</button>
+    </div>
+    <audio id="audio" controls preload="auto"></audio>
+    <div id="status">Pilot chart is preloaded. Load the song file and press play on the audio bar, or fly it in Spotify/Uncrashed and press GO at the first beat.</div>
+  </div>
+
+  <div id="help">
+    <p><b style="color:var(--ink)">How to fly it:</b> (1) In Uncrashed, load the Workshop track <i>Drone Hero 001 — DJ Turn It Up</i> and sit on the start pad. (2) Start this overlay: load the song file here and play it — or press <b>GO</b> the moment the song starts elsewhere. (3) Calls land on phrase boundaries: ↑ frontflip, ↓ backflip, ← roll left, → roll right. Skipping a call costs nothing. Cruise between calls.</p>
+    <p><b style="color:var(--ink)">For OBS:</b> add this page as a Browser Source, tick “OBS transparent mode”, hide the panel with <kbd>H</kbd>. Keys while a call is live: <kbd>Space</kbd> = I hit it (grades timing), <kbd>X</kbd> = missed. Offset buttons fix sync drift.</p>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ================= CORE (DOM-free, unit-tested) ================= */
+//CORE-START
+var DIRS=[{k:'front',arrow:'↑',label:'FRONTFLIP'},{k:'back',arrow:'↓',label:'BACKFLIP'},{k:'left',arrow:'←',label:'ROLL LEFT'},{k:'right',arrow:'→',label:'ROLL RIGHT'}];
+var PILOT={
+  song:"DJ Turn It Up",artist:"Dimension",bpm:174,duration:177,
+  sections:[
+    {start_bar:1,name:"INTRO",intent:"Cruise — establish the line"},
+    {start_bar:17,name:"BUILD 1",intent:"One tease call"},
+    {start_bar:33,name:"DROP 1",intent:"Full chart"},
+    {start_bar:49,name:"DROP 1B",intent:"Full chart, variation"},
+    {start_bar:65,name:"BREAKDOWN",intent:"One call — breathe"},
+    {start_bar:81,name:"BUILD 2",intent:"Two calls"},
+    {start_bar:97,name:"DROP 2",intent:"Full chart — hardest combo"},
+    {start_bar:113,name:"FINAL / OUTRO",intent:"Last calls, then free-fly"}
+  ],
+  calls:[[29,0,0],[33,1,0],[37,2,0],[41,3,0],[45,0,0],[46,1,1],[53,2,0],[57,3,0],[61,0,0],[62,1,1],[73,2,0],[85,3,0],[93,0,0],[97,1,0],[101,2,0],[105,3,0],[109,0,0],[110,1,1],[117,2,0],[121,3,0]]
+};
+function barSec(bpm){ return 4*60/bpm; }
+function expandChart(p){
+  var bs=barSec(p.bpm);
+  return {bpm:p.bpm,duration:p.duration,
+    sections:p.sections.map(function(s){return {bar:s.start_bar,t:(s.start_bar-1)*bs,name:s.name,intent:s.intent};}),
+    calls:p.calls.map(function(c){var d=DIRS[c[1]];return {bar:c[0],t:(c[0]-1)*bs,dir:d.k,arrow:d.arrow,label:d.label,combo:!!c[2]};})};
+}
+/* Generic chart for any song: same lyrical pattern — settle 8 bars, then
+   calls every 4 bars, a 1-bar combo every 16 bars, an 8-bar cruise gap
+   after each combo. Deterministic, no audio analysis needed. */
+function buildGridChart(bpm,duration){
+  var bs=barSec(bpm), totalBars=Math.floor(duration/bs), calls=[], di=0, bar=9;
+  while(bar+1<=totalBars){
+    var d=DIRS[di%4]; calls.push({bar:bar,t:(bar-1)*bs,dir:d.k,arrow:d.arrow,label:d.label,combo:false}); di++;
+    if(bar%16===9){ var d2=DIRS[di%4]; calls.push({bar:bar+1,t:bar*bs,dir:d2.k,arrow:d2.arrow,label:d2.label,combo:true}); di++; bar+=8; }
+    else bar+=4;
+  }
+  return {bpm:bpm,duration:duration,sections:[{bar:1,t:0,name:"CHART",intent:"Generated grid chart"}],calls:calls};
+}
+function sectionAt(chart,t){
+  var cur=chart.sections[0]||{name:"—",intent:""};
+  for(var i=0;i<chart.sections.length;i++){ if(t>=chart.sections[i].t) cur=chart.sections[i]; }
+  return cur;
+}
+function nextCall(chart,t){
+  for(var i=0;i<chart.calls.length;i++){ if(chart.calls[i].t>=t-0.001) return {call:chart.calls[i],index:i}; }
+  return null;
+}
+function gradeFor(dt){ var a=Math.abs(dt); if(a<=0.25) return {txt:"PERFECT",pts:300}; if(a<=0.7) return {txt:"GOOD",pts:150}; if(a<=1.2) return {txt:"LATE/EARLY",pts:50}; return null; }
+//CORE-END
+/* ================= UI ================= */
+var chart=expandChart(PILOT);
+var mode="idle"; // idle | file | manual
+var manualStart=0, manualOffset=0, judged={}, hits=0, graded=0, points=0, lastBeat=-1;
+var $=function(id){return document.getElementById(id);};
+var audio=$("audio");
+function fmt(s){ if(!isFinite(s)||s<0)s=0; var m=Math.floor(s/60), r=Math.floor(s%60); return m+":"+(r<10?"0":"")+r; }
+function setStatus(x){ $("status").textContent=x; }
+function nowT(){
+  if(mode==="file") return audio.currentTime + parseFloat($("offset").value||0);
+  if(mode==="manual") return (performance.now()-manualStart)/1000 + manualOffset + parseFloat($("offset").value||0);
+  return 0;
+}
+$("file").addEventListener("change",function(e){
+  var f=e.target.files[0]; if(!f) return;
+  audio.src=URL.createObjectURL(f); mode="file"; judged={};
+  setStatus("Loaded "+f.name+" — press play on the audio bar. Chart: "+(chart.calls.length)+" calls at "+chart.bpm+" BPM. If this isn't the pilot song, set its BPM and Generate.");
+});
+$("usePreset").addEventListener("click",function(){ chart=expandChart(PILOT); judged={}; $("bpm").value=174; $("song").textContent="Dimension — DJ Turn It Up · 174 BPM · Pilot 001"; setStatus("Pilot chart loaded: 20 calls, sections on the 16-bar grid."); });
+$("genChart").addEventListener("click",function(){
+  var bpm=parseFloat($("bpm").value)||174;
+  var dur=(mode==="file"&&audio.duration)?audio.duration:chart.duration||177;
+  chart=buildGridChart(bpm,dur); judged={};
+  $("song").textContent=($("title").value||"Custom song")+" · "+bpm+" BPM · generated chart";
+  setStatus("Generated chart: "+chart.calls.length+" calls at "+bpm+" BPM over "+fmt(dur)+".");
+});
+$("go").addEventListener("click",function(){ mode="manual"; manualStart=performance.now(); manualOffset=0; judged={}; setStatus("Manual clock running — you pressed GO at song start. Use −/+0.1s if the calls drift."); });
+$("stop").addEventListener("click",function(){ mode="idle"; if(!audio.paused)audio.pause(); setStatus("Stopped."); });
+$("minus").addEventListener("click",function(){ var o=$("offset"); o.value=(parseFloat(o.value)-0.1).toFixed(1); });
+$("plus").addEventListener("click",function(){ var o=$("offset"); o.value=(parseFloat(o.value)+0.1).toFixed(1); });
+$("obs").addEventListener("click",function(){ document.body.classList.toggle("obs"); });
+function togglePanel(){ var p=$("panel"),h=$("help"); var hide=p.style.display!=="none"; p.style.display=hide?"none":""; h.style.display=hide?"none":""; }
+$("hideUi").addEventListener("click",togglePanel);
+document.addEventListener("keydown",function(e){
+  if(e.key==="h"||e.key==="H"){ togglePanel(); return; }
+  if(mode==="idle") return;
+  var t=nowT(), nx=nextCall(chart,t);
+  if(e.code==="Space"&&nx){ e.preventDefault(); var dt=t-nx.call.t; var g=gradeFor(dt);
+    if(g&&!judged[nx.index]){ judged[nx.index]=g.txt; hits++; graded++; points+=g.pts; flashJudge(g.txt, dt<0?"early":"late"); } }
+  if((e.key==="x"||e.key==="X")&&nx&&!judged[nx.index]){ judged[nx.index]="MISS"; flashJudge("MISS",""); }
+});
+var judgeTimer=null;
+function flashJudge(txt,sub){ var j=$("judge"); j.textContent=txt+(sub?" · "+sub:""); j.style.color=txt==="PERFECT"?"var(--perf)":txt==="GOOD"?"var(--good)":"var(--bad)"; clearTimeout(judgeTimer); judgeTimer=setTimeout(function(){ j.textContent=""; },1400); }
+function tick(){
+  var t=nowT(), bs=barSec(chart.bpm), spb=60/chart.bpm;
+  var dur=chart.duration||0;
+  if(mode!=="idle"){
+    var beat=Math.floor(t/spb), bar=Math.floor(t/bs)+1;
+    if(beat!==lastBeat){ lastBeat=beat; var p=$("pulse"); var isDown=(beat%4===0); p.className=isDown?"down":"beat"; p.id="pulse"; setTimeout(function(){ p.className=""; },110); }
+    $("barInfo").textContent="BAR "+bar+" · BEAT "+((beat%4)+1)+" · "+fmt(t)+" / "+fmt(dur);
+    var sec=sectionAt(chart,t); $("section").textContent=sec.name+" — "+sec.intent;
+    var nx=nextCall(chart,t), box=$("nextBox");
+    if(nx){
+      var dt=nx.call.t-t, c=nx.call;
+      $("nextArr").textContent=c.arrow; $("nextName").textContent=c.label+(c.combo?" · COMBO":"");
+      if(dt<=0.9&&dt>=-0.4){ box.className="now"; $("nextLbl").textContent="NOW"; $("nextIn").textContent=""; }
+      else { box.className=""; $("nextLbl").textContent="NEXT CALL"; $("nextIn").textContent="in "+dt.toFixed(1)+"s · bar "+c.bar+" · "+fmt(c.t); }
+      if(dt<-0.4&&!judged[nx.index]){ judged[nx.index]="—"; }
+      var q="", shown=0;
+      for(var i=nx.index;i<chart.calls.length&&shown<4;i++){ var cc=chart.calls[i]; q+='<span class="chip'+(cc.combo?" combo":"")+'"><b>'+cc.arrow+"</b> "+cc.label+" · "+fmt(cc.t)+"</span>"; shown++; }
+      $("queue").innerHTML=q;
+    } else {
+      $("nextArr").textContent="✓"; $("nextName").textContent="SONG COMPLETE"; $("nextIn").textContent="Free-fly the tail — or land it clean."; $("nextLbl").textContent=""; $("queue").innerHTML="";
+    }
+    $("score").textContent=graded?("Hits "+hits+" · Points "+points+" · Space = hit, X = miss"):"";
+    if(mode==="file"&&audio.ended){ mode="idle"; }
+  }
+  requestAnimationFrame(tick);
+}
+if(/[?&]obs=1/.test(location.search)) document.body.classList.add("obs");
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

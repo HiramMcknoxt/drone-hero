@@ -1,0 +1,232 @@
+{
+ "song": "DJ Turn It Up",
+ "artist": "Dimension",
+ "bpm": 174.0,
+ "duration_sec": 177.0,
+ "time_signature": "4/4",
+ "bar_sec": 1.3793,
+ "spotify_track": "spotify:track:28r1xYNakXXwcQKIXu9Wjw",
+ "playlist": "FPV Flight Pack \u2014 Drum & Bass (spotify:playlist:00Z6wZm8OJPdVau6hMnCbs)",
+ "density_note": "20 calls in 2:57 (~7/min overall). Drop spacing is 4 bars (~5.5s) with a single 1-bar combo burst per drop; intro/breakdown/builds are cruise. This matches Corey's lyrical cadence (bursts, then 11-22s of cruising) instead of every-beat charting.",
+ "note": "Grid chart at a fixed 174 BPM. Section boundaries are 16-bar grid blocks; verify drop onsets against the overlay's audio analysis on first load and shift a section marker, never the beat grid, if a drop lands a bar early/late.",
+ "sections": [
+  {
+   "start_bar": 1,
+   "start_t": 0.0,
+   "name": "INTRO",
+   "intent": "Cruise \u2014 establish the line, no calls",
+   "intensity": "low"
+  },
+  {
+   "start_bar": 17,
+   "start_t": 22.07,
+   "name": "BUILD 1",
+   "intent": "Cruise + one tease call at bar 29",
+   "intensity": "rising"
+  },
+  {
+   "start_bar": 33,
+   "start_t": 44.14,
+   "name": "DROP 1",
+   "intent": "Calls every 4 bars + one combo burst",
+   "intensity": "high"
+  },
+  {
+   "start_bar": 49,
+   "start_t": 66.21,
+   "name": "DROP 1B",
+   "intent": "Entry cruise, calls from bar 53 + combo",
+   "intensity": "high"
+  },
+  {
+   "start_bar": 65,
+   "start_t": 88.28,
+   "name": "BREAKDOWN",
+   "intent": "One call only \u2014 breathe, reset the line",
+   "intensity": "low"
+  },
+  {
+   "start_bar": 81,
+   "start_t": 110.34,
+   "name": "BUILD 2",
+   "intent": "Two calls, every 8 bars",
+   "intensity": "rising"
+  },
+  {
+   "start_bar": 97,
+   "start_t": 132.41,
+   "name": "DROP 2",
+   "intent": "Full chart \u2014 every 4 bars + hardest combo",
+   "intensity": "high"
+  },
+  {
+   "start_bar": 113,
+   "start_t": 154.48,
+   "name": "FINAL / OUTRO",
+   "intent": "Two last calls (117, 121), then free-fly the tail",
+   "intensity": "high->out"
+  }
+ ],
+ "calls": [
+  {
+   "bar": 29,
+   "t": 38.62,
+   "dir": "front",
+   "arrow": "\u2191",
+   "label": "FRONTFLIP",
+   "combo": false
+  },
+  {
+   "bar": 33,
+   "t": 44.14,
+   "dir": "back",
+   "arrow": "\u2193",
+   "label": "BACKFLIP",
+   "combo": false
+  },
+  {
+   "bar": 37,
+   "t": 49.66,
+   "dir": "left",
+   "arrow": "\u2190",
+   "label": "ROLL LEFT",
+   "combo": false
+  },
+  {
+   "bar": 41,
+   "t": 55.17,
+   "dir": "right",
+   "arrow": "\u2192",
+   "label": "ROLL RIGHT",
+   "combo": false
+  },
+  {
+   "bar": 45,
+   "t": 60.69,
+   "dir": "front",
+   "arrow": "\u2191",
+   "label": "FRONTFLIP",
+   "combo": false
+  },
+  {
+   "bar": 46,
+   "t": 62.07,
+   "dir": "back",
+   "arrow": "\u2193",
+   "label": "BACKFLIP",
+   "combo": true
+  },
+  {
+   "bar": 53,
+   "t": 71.72,
+   "dir": "left",
+   "arrow": "\u2190",
+   "label": "ROLL LEFT",
+   "combo": false
+  },
+  {
+   "bar": 57,
+   "t": 77.24,
+   "dir": "right",
+   "arrow": "\u2192",
+   "label": "ROLL RIGHT",
+   "combo": false
+  },
+  {
+   "bar": 61,
+   "t": 82.76,
+   "dir": "front",
+   "arrow": "\u2191",
+   "label": "FRONTFLIP",
+   "combo": false
+  },
+  {
+   "bar": 62,
+   "t": 84.14,
+   "dir": "back",
+   "arrow": "\u2193",
+   "label": "BACKFLIP",
+   "combo": true
+  },
+  {
+   "bar": 73,
+   "t": 99.31,
+   "dir": "left",
+   "arrow": "\u2190",
+   "label": "ROLL LEFT",
+   "combo": false
+  },
+  {
+   "bar": 85,
+   "t": 115.86,
+   "dir": "right",
+   "arrow": "\u2192",
+   "label": "ROLL RIGHT",
+   "combo": false
+  },
+  {
+   "bar": 93,
+   "t": 126.9,
+   "dir": "front",
+   "arrow": "\u2191",
+   "label": "FRONTFLIP",
+   "combo": false
+  },
+  {
+   "bar": 97,
+   "t": 132.41,
+   "dir": "back",
+   "arrow": "\u2193",
+   "label": "BACKFLIP",
+   "combo": false
+  },
+  {
+   "bar": 101,
+   "t": 137.93,
+   "dir": "left",
+   "arrow": "\u2190",
+   "label": "ROLL LEFT",
+   "combo": false
+  },
+  {
+   "bar": 105,
+   "t": 143.45,
+   "dir": "right",
+   "arrow": "\u2192",
+   "label": "ROLL RIGHT",
+   "combo": false
+  },
+  {
+   "bar": 109,
+   "t": 148.97,
+   "dir": "front",
+   "arrow": "\u2191",
+   "label": "FRONTFLIP",
+   "combo": false
+  },
+  {
+   "bar": 110,
+   "t": 150.34,
+   "dir": "back",
+   "arrow": "\u2193",
+   "label": "BACKFLIP",
+   "combo": true
+  },
+  {
+   "bar": 117,
+   "t": 160.0,
+   "dir": "left",
+   "arrow": "\u2190",
+   "label": "ROLL LEFT",
+   "combo": false
+  },
+  {
+   "bar": 121,
+   "t": 165.52,
+   "dir": "right",
+   "arrow": "\u2192",
+   "label": "ROLL RIGHT",
+   "combo": false
+  }
+ ]
+}
