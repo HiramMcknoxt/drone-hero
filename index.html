@@ -318,10 +318,11 @@ a{color:var(--cyan)}
                 </select></label>
               <label class="ck">Center deadband <input type="range" id="radioDb" min="0" max="0.2" step="0.01" value="0.06" style="width:90px" /> <span id="radioDbVal">0.06</span></label>
               <label class="ck">Arm / reset button <select id="armBtnSel"></select></label>
+              <label class="ck">Device <select id="padSel" style="max-width:260px"><option value="auto">Auto — whichever one you move</option></select></label>
             </div>
             <div class="row">
               <button class="bigbtn" id="calBtn" style="padding:10px 18px;font-size:13px">CALIBRATE RADIO</button>
-              <span style="font-size:12px;color:var(--dim)" id="calStepText">Guided wizard, the way the established sims do it: one big prompt at a time — pitch, roll, throttle, yaw — just move the stick and it captures itself, direction included. The presets above already load the standard DJI / EdgeTX USB axis order, so check the live stick test first; calibrate only if a control reads wrong. Esc cancels calibration at any step; the keyboard always keeps working.</span>
+              <span style="font-size:12px;color:var(--dim)" id="calStepText">Guided wizard, the way the established sims do it: one big prompt at a time — pitch, roll, throttle, yaw — just move the stick and hold it at full travel — it captures itself, direction included. The presets above already load the standard DJI / EdgeTX USB axis order, so a radio usually flies straight away — but run this once per radio: it records each stick's exact travel and is remembered in this browser. Esc cancels calibration at any step; the keyboard always keeps working.</span>
             </div>
             <div id="calWizard" style="display:none">
               <div id="calProgress">GETTING READY</div>
@@ -349,7 +350,10 @@ a{color:var(--cyan)}
                 <div class="testbar"><span class="fn">YAW</span><div class="track"><div class="mid"></div><div class="fill" id="bar_yaw" style="left:50%;width:0%"></div></div><span class="val" id="barVal_yaw">—</span></div>
                 <div class="testbar"><span class="fn">PITCH</span><div class="track"><div class="mid"></div><div class="fill" id="bar_pitch" style="left:50%;width:0%"></div></div><span class="val" id="barVal_pitch">—</span></div>
                 <div class="testbar"><span class="fn">ROLL</span><div class="track"><div class="mid"></div><div class="fill" id="bar_roll" style="left:50%;width:0%"></div></div><span class="val" id="barVal_roll">—</span></div>
+                <div id="rawAxes" style="font-size:11px;color:var(--faint);margin-top:8px;word-spacing:2px">Raw: —</div>
                 <p style="font-size:11px">The chosen arm/reset button disarms back to setup while flying, and rebuilds on the pad after a crash. Keyboard and touch still work alongside the radio.</p>
+                <div class="row" style="margin-top:6px"><button class="ghostbtn" id="radioReportBtn" style="padding:7px 12px;font-size:12px">Copy radio report</button><span id="radioReportMsg" style="font-size:11px;color:var(--dim)">If a control still reads wrong, press this with the radio plugged in and send the text.</span></div>
+                <textarea id="radioReportBox" readonly rows="7" style="display:none;width:100%;margin-top:6px;font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;background:#0b0f12;color:var(--ink);border:1px solid var(--line2);border-radius:6px;padding:6px"></textarea>
               </div>
             </div>
           </div>
@@ -1225,23 +1229,94 @@ function getMin(axis){ return radio.min[axis]!==undefined ? radio.min[axis] : -1
 function getMax(axis){ return radio.max[axis]!==undefined ? radio.max[axis] : 1; }
 function detectPreset(id){
   var s=(id||'').toLowerCase();
-  if(s.indexOf('dji')>=0) return 'dji';
-  if(s.indexOf('radiomaster')>=0||s.indexOf('radio master')>=0||s.indexOf('pocket')>=0||s.indexOf('frsky')>=0||s.indexOf('opentx')>=0||s.indexOf('edgetx')>=0||s.indexOf('jumper')>=0||s.indexOf('betafpv')>=0) return 'rm';
+  if(s.indexOf('dji')>=0||s.indexOf('2ca3')>=0) return 'dji'; // 2ca3 = DJI's USB vendor id
+  if(/radiomaster|radio master|pocket|frsky|opentx|edgetx|jumper|betafpv|taranis|tango|boxer|zorro|tx16|tx12|literadio|flysky|radiolink/.test(s)) return 'rm';
   return 'generic';
+}
+/* ---- saved radio setup: kept per device, in this browser only ---- */
+var RADIO_KEY='droneHero.radio.v2';
+function readSaved(){ try{ return JSON.parse(localStorage.getItem(RADIO_KEY)||'{}')||{}; }catch(e){ return {}; } }
+function saveRadio(){
+  try{
+    var s=readSaved(); s.pads=s.pads||{};
+    s.stickMode=stickMode; s.deadband=radio.deadband; s.armBtn=radio.armBtn; s.padPick=padPick;
+    if(radio.id){
+      if(radio.calibrated) s.pads[radio.id]={map:deepMap(radio.map), rest:radio.rest, min:radio.min, max:radio.max};
+      else delete s.pads[radio.id];
+    }
+    localStorage.setItem(RADIO_KEY, JSON.stringify(s));
+  }catch(e){}
+}
+function loadSavedPad(id){
+  var p=(readSaved().pads||{})[id], ok=!!(p&&p.map);
+  ['thr','yaw','pitch','roll'].forEach(function(fn){ if(!ok||!p.map[fn]||typeof p.map[fn].axis!=='number') ok=false; });
+  if(!ok) return false;
+  radio.map=deepMap(p.map); radio.rest=p.rest||{}; radio.min=p.min||{}; radio.max=p.max||{}; radio.calibrated=true;
+  return true;
 }
 function onRadioSeen(gp){
   var changed = (!radio.connected || radio.id!==gp.id);
   radio.connected=true; radio.id=gp.id; radio.index=gp.index;
-  if(changed){ radio.touched=false; radio.firstAxes=null; }
-  if(changed && !radio.presetLocked){ applyPreset(detectPreset(gp.id), true); }
+  if(changed){
+    radio.touched=false; radio.firstAxes=null; radio.armSeen=false;
+    if(!(typeof cal!=='undefined' && cal && cal.active)){
+      var p=detectPreset(gp.id);
+      if(loadSavedPad(gp.id)){ markPreset(p); syncMapUI(); }      // this radio was calibrated before: use that
+      else if(!radio.presetLocked){ radio.calibrated=false; applyPreset(p, true); }
+    }
+  }
   updateRadioStatus();
 }
+/* ---- which USB device is the radio ----
+   Browsers list every HID "game controller" — wireless mouse receivers,
+   headsets and virtual joysticks included — and the first one in the list
+   is often not the radio. A radio needs four axes; among those, the device
+   whose stick actually moves wins, then the most radio-like one. The pilot
+   can also pin a device by name. */
+var padPick='auto', padSig='', padSeen={};
+function padEligible(gp){ return !!(gp && gp.axes && gp.axes.length>=4); }
+function padScore(gp){ return gp.axes.length + (detectPreset(gp.id)!=='generic' ? 100 : 0); }
+function listPads(){ var gps=navigator.getGamepads?navigator.getGamepads():[], out=[]; for(var i=0;i<gps.length;i++){ if(gps[i]) out.push(gps[i]); } return out; }
+function padLabel(id){ return (id||'').replace(/\s*\((STANDARD GAMEPAD\s*)?Vendor:.*$/i,'') || id || 'Unnamed device'; }
+function dropRadio(){ radio.connected=false; radio.index=-1; radio.id=''; radio.touched=false; radio.firstAxes=null; }
 function currentGamepad(){
   var gps=navigator.getGamepads?navigator.getGamepads():[];
-  if(radio.index>=0 && gps[radio.index]) return gps[radio.index];
-  for(var i=0;i<gps.length;i++){ if(gps[i]){ onRadioSeen(gps[i]); return gps[i]; } }
-  if(radio.connected){ radio.connected=false; radio.index=-1; updateRadioStatus(); }
+  var cur=radio.index>=0 ? gps[radio.index] : null;
+  if(cur && cur.id===radio.id) return cur;
+  var best=null, bs=-1;
+  for(var i=0;i<gps.length;i++){ var g=gps[i]; if(!padEligible(g)) continue;
+    if(padPick!=='auto' && g.id!==padPick) continue;
+    var sc=padScore(g); if(sc>bs){ bs=sc; best=g; } }
+  if(best){ onRadioSeen(best); return best; }
+  if(radio.connected){ dropRadio(); updateRadioStatus(); }
   return null;
+}
+function fillPadSel(pads){
+  var sel=$('padSel'); if(!sel) return;
+  var seen={}, o;
+  sel.innerHTML='';
+  o=document.createElement('option'); o.value='auto'; o.textContent='Auto — whichever one you move'; sel.appendChild(o);
+  pads.forEach(function(p){ if(seen[p.id]) return; seen[p.id]=1;
+    o=document.createElement('option'); o.value=p.id;
+    o.textContent=padLabel(p.id)+' · '+p.axes.length+' axes'+(padEligible(p)?'':' (too few to be a radio)'); sel.appendChild(o); });
+  if(padPick!=='auto' && !seen[padPick]){ o=document.createElement('option'); o.value=padPick; o.textContent=padLabel(padPick)+' · not connected'; sel.appendChild(o); }
+  sel.value=padPick;
+}
+function rescanPads(){
+  var pads=listPads(), sig='', i, p;
+  for(i=0;i<pads.length;i++) sig+=pads[i].index+':'+pads[i].id+':'+pads[i].axes.length+'|';
+  if(sig!==padSig){ padSig=sig; fillPadSel(pads); }
+  if(padPick!=='auto' || cal.active) return;
+  if(radio.connected && radio.touched) return; // the radio in use is never swapped out from under the pilot
+  var best=null, bs=-1, mover=null;
+  for(i=0;i<pads.length;i++){ p=pads[i]; if(!padEligible(p)) continue;
+    var seen=padSeen[p.index];
+    if(!seen || seen.id!==p.id) seen=padSeen[p.index]={id:p.id, axes:Array.prototype.slice.call(p.axes)};
+    for(var a=0;a<p.axes.length;a++){ if(Math.abs(p.axes[a]-(seen.axes[a]||0))>0.3){ mover=p; break; } }
+    var sc=padScore(p); if(sc>bs){ bs=sc; best=p; }
+  }
+  var pick=mover||best;
+  if(pick && (pick.index!==radio.index || pick.id!==radio.id)){ dropRadio(); onRadioSeen(pick); }
 }
 function axisVal(gp,axis){ return (gp.axes && axis<gp.axes.length && typeof gp.axes[axis]==='number') ? gp.axes[axis] : 0; }
 function normCentered(gp,fn){
@@ -1285,10 +1360,17 @@ function pollRadio(st){
   // Absolute radio throttle — except while W/S is held: keyboard input the
   // pilot is actively making always wins over a resting radio axis.
   if(!keys['KeyW'] && !keys['KeyS']) st.thrAbs=vals.thr;
-  var btns=vals.gp.buttons||[], b=btns[radio.armBtn];
-  var pressed=!!(b&&b.pressed);
-  if(pressed && !radio.prevArm){
-    if(state==='crash') resetDroneKeepFlying();
+}
+/* Arm / reset button. Read once per frame in every state — the physics step
+   stops running after a crash, so reading it there made the radio's reset
+   unreachable exactly when it was needed. A switch that is already on when
+   the radio appears is not a press: only a real off→on change counts. */
+function pollRadioButtons(){
+  var gp=currentGamepad(); if(!gp) return;
+  var b=(gp.buttons||[])[radio.armBtn], pressed=!!(b&&b.pressed);
+  if(!radio.armSeen){ radio.armSeen=true; radio.prevArm=pressed; return; }
+  if(pressed && !radio.prevArm && !cal.active){
+    if(drone && drone.crashed && state==='fly') resetDroneKeepFlying();
     else if(state==='fly'||state==='pause') stopFlightToMenu();
   }
   radio.prevArm=pressed;
@@ -1319,10 +1401,13 @@ function applyPresetDefaults(p){
   radio.rest={}; radio.min={}; radio.max={}; radio.calibrated=false;
   syncMapUI();
 }
-function applyPreset(p, silent){
+function markPreset(p){
   radio.preset=p;
   document.querySelectorAll('.radioPreset').forEach(function(b){ b.classList.toggle('on', b.dataset.preset===p); });
-  if(p==='dji'||p==='rm'){ stickMode=3; applyStickMode(); } // Corey's radios fly Mode 3
+}
+function applyPreset(p, silent){
+  markPreset(p);
+  if((p==='dji'||p==='rm') && !radio.modeChosen){ stickMode=3; applyStickMode(); } // Corey's radios fly Mode 3 — unless he picked another
   if(!radio.calibrated) applyPresetDefaults(p); // a finished calibration is never overwritten by detection
   if(!silent) updateRadioStatus();
 }
@@ -1331,7 +1416,7 @@ function updateRadioStatus(){
   var el=$('radioStatus'); if(!el) return;
   var msg, cls;
   if(radio.connected){
-    msg='Controller connected ✓ '+radio.id+(radio.touched?' · radio live':' · plugged in — keyboard flies until you move a stick')+(radio.calibrated?' · calibrated':' · standard axis map loaded (calibrate only if a control reads wrong)');
+    msg='Controller connected ✓ '+padLabel(radio.id)+(radio.touched?' · radio live':' · plugged in — keyboard flies until you move a stick')+(radio.calibrated?' · calibrated (saved for this radio)':' · standard axis map loaded — run CALIBRATE RADIO once so the stick ranges are exact');
     cls='statusline ok';
   } else {
     msg='No controller detected yet — connect the radio by USB and move a stick. (DJI RC 3: power on + USB-C. Pocket: USB → Joystick mode.)';
@@ -1407,7 +1492,11 @@ function beginRest(){
 function captureRest(){
   var gp=currentGamepad(); if(!gp){ beginWait(); return; }
   cal.snap={}; radio.rest={}; radio.min={}; radio.max={};
-  for(var i=0;i<gp.axes.length;i++){ cal.snap[i]=gp.axes[i]; radio.rest[i]=gp.axes[i]; radio.min[i]=gp.axes[i]; radio.max[i]=gp.axes[i]; }
+  // Only the rest position is recorded here. Ranges are set per control as it
+  // is assigned; a skipped control keeps the default full range instead of a
+  // zero-width one (which made it slam to full at the slightest touch).
+  for(var i=0;i<gp.axes.length;i++){ cal.snap[i]=gp.axes[i]; radio.rest[i]=gp.axes[i]; }
+  cal.holdAxis=-1; cal.doneAxis=-1;
   radio.touched=true; // wiggling through calibration counts as handing over control
   cal.fnIdx=0; beginAssign();
 }
@@ -1419,17 +1508,24 @@ function beginAssign(){
   cal.phase='assign'; calChrome();
   var fn=CAL_ORDER[cal.fnIdx];
   $('calPrompt').innerHTML='Move the stick you want for <b>'+FN_LONG[fn]+'</b>';
-  calSubSay(CAL_PROMPT[fn]+' ('+FN_LONG[fn]+' is '+fnSideHint(fn)+'.) The axis that moves gets captured by itself — no buttons to press while you hold it.');
+  calSubSay(CAL_PROMPT[fn]+' ('+FN_LONG[fn]+' is '+fnSideHint(fn)+'.) Hold it at the end of its travel for half a second and it captures itself — no buttons to press.');
 }
 function captureAssignAxis(axis, pushVal){
   var fn=CAL_ORDER[cal.fnIdx], rest=(cal.snap&&cal.snap[axis])||0;
   radio.map[fn].axis=axis;
   radio.map[fn].inv = pushVal < rest; // moving the prompted way must read positive / full
   var span=Math.max(0.1, Math.abs(pushVal-rest));
-  if(pushVal>=rest){ radio.max[axis]=pushVal; radio.min[axis]=Math.max(-1, rest-span); }
+  if(fn==='thr'){
+    // Throttle travels rest (stick down) → push (stick up) and nowhere else.
+    // Mirroring the span below rest put "zero" where the stick can never go,
+    // so a radio with a shorter USB range idled at ~20% instead of 0%.
+    if(pushVal>=rest){ radio.min[axis]=rest; radio.max[axis]=pushVal; }
+    else { radio.min[axis]=pushVal; radio.max[axis]=rest; }
+  }
+  else if(pushVal>=rest){ radio.max[axis]=pushVal; radio.min[axis]=Math.max(-1, rest-span); }
   else { radio.min[axis]=pushVal; radio.max[axis]=Math.min(1, rest+span); }
   radio.rest[axis]=rest;
-  cal.usedAxes[axis]=fn;
+  cal.usedAxes[axis]=fn; cal.doneAxis=axis; cal.doneFn=fn; cal.holdAxis=-1;
   cal.phase='settle'; cal.settleSince=0; calChrome();
   $('calPrompt').innerHTML='✓ '+FN_LONG[fn]+' is on axis '+axis+(radio.map[fn].inv?' — direction flipped to match':'');
   calSubSay('Let that stick come back to rest and the next control appears on its own — or press NEXT.');
@@ -1451,7 +1547,7 @@ function endWizard(){
   $('calBtn').disabled=false; $('calBtn').textContent='CALIBRATE RADIO';
 }
 function finishCalibration(){
-  endWizard(); radio.calibrated=true; syncMapUI(); cal.backup=null;
+  endWizard(); radio.calibrated=true; syncMapUI(); cal.backup=null; saveRadio();
   calSay('Calibration complete — check the live stick test below: throttle 0% with the stick down and 100% up, the rest centered at 0. If a control reads backwards, flip its invert box in the manual map.');
   calStatusSay('Calibrated ✓ THR axis '+radio.map.thr.axis+' · YAW axis '+radio.map.yaw.axis+' · PITCH axis '+radio.map.pitch.axis+' · ROLL axis '+radio.map.roll.axis+'. Rest + range recorded per axis.','ok');
   updateRadioStatus();
@@ -1501,13 +1597,28 @@ function sampleCalibration(){
       if(d>anyDev){ anyDev=d; anyAxis=i; }
       if(!cal.usedAxes.hasOwnProperty(i) && d>bestDev){ bestDev=d; bestAxis=i; }
     }
-    if(bestAxis>=0 && bestDev>0.6){ captureAssignAxis(bestAxis, gp.axes[bestAxis]); return; }
-    if(anyAxis>=0 && anyDev>0.6 && cal.usedAxes.hasOwnProperty(anyAxis)){
+    /* Capture when the stick has been pushed AND is being held still at the
+       end of its travel — not the instant it crosses a fixed mark. Capturing
+       at a fixed 0.6 recorded a part-way position as "full" (throttle maxed
+       out at a third of its travel) and never fired at all on radios whose
+       USB range tops out below 0.6. */
+    if(bestAxis>=0 && bestDev>0.25){
+      var hv=gp.axes[bestAxis];
+      if(cal.holdAxis!==bestAxis || Math.abs(hv-cal.holdVal)>0.03){ cal.holdAxis=bestAxis; cal.holdVal=hv; cal.holdSince=now; }
+      else if(now-cal.holdSince>450){ captureAssignAxis(bestAxis, hv); return; }
+    } else cal.holdAxis=-1;
+    if(anyAxis>=0 && anyDev>0.25 && bestDev<=0.25 && cal.usedAxes.hasOwnProperty(anyAxis)){
       calSubSay('That movement is axis '+anyAxis+', already assigned to '+FN_LONG[cal.usedAxes[anyAxis]]+' — move a different stick for '+FN_LONG[CAL_ORDER[cal.fnIdx]]+'.');
     }
   }
   else if(cal.phase==='settle'){
     var settled=true;
+    // Pushed a little further after the capture? Take the larger travel.
+    if(cal.doneAxis>=0){
+      var dv=gp.axes[cal.doneAxis], dr=cal.snap[cal.doneAxis]||0, thrDone=(cal.doneFn==='thr');
+      if(dv>getMax(cal.doneAxis) && dv>dr){ radio.max[cal.doneAxis]=dv; if(!thrDone) radio.min[cal.doneAxis]=Math.max(-1, dr-(dv-dr)); }
+      if(dv<getMin(cal.doneAxis) && dv<dr){ radio.min[cal.doneAxis]=dv; if(!thrDone) radio.max[cal.doneAxis]=Math.min(1, dr+(dr-dv)); }
+    }
     for(i=0;i<gp.axes.length;i++){ if(Math.abs(gp.axes[i]-(cal.snap[i]||0))>0.2){ settled=false; break; } }
     if(settled){ if(!cal.settleSince) cal.settleSince=now; else if(now-cal.settleSince>300) nextAssign(); }
     else cal.settleSince=0;
@@ -1517,18 +1628,53 @@ function sampleCalibration(){
 document.querySelectorAll('.axisSel').forEach(function(sel){
   for(var a=0;a<10;a++){ var o=document.createElement('option'); o.value=a; o.textContent='Axis '+a; sel.appendChild(o); }
 });
-(function(){ var sel=$('armBtnSel'); for(var b=0;b<16;b++){ var o=document.createElement('option'); o.value=b; o.textContent='Button '+b; sel.appendChild(o); } sel.value='0'; })();
+(function(){ var sel=$('armBtnSel'), o=document.createElement('option'); o.value=-1; o.textContent='None'; sel.appendChild(o);
+  for(var b=0;b<32;b++){ o=document.createElement('option'); o.value=b; o.textContent='Button '+b; sel.appendChild(o); } sel.value='0'; })();
+(function(){ // settings saved by an earlier visit
+  var s=readSaved();
+  if(s.stickMode>=1 && s.stickMode<=4){ stickMode=s.stickMode; radio.modeChosen=true; }
+  if(typeof s.deadband==='number'){ radio.deadband=clamp(s.deadband,0,0.2); $('radioDb').value=radio.deadband; $('radioDbVal').textContent=radio.deadband.toFixed(2); }
+  if(typeof s.armBtn==='number'){ radio.armBtn=s.armBtn; $('armBtnSel').value=String(s.armBtn); }
+  if(typeof s.padPick==='string') padPick=s.padPick;
+})();
+$('padSel').addEventListener('change',function(){ padPick=this.value; padSeen={}; dropRadio(); currentGamepad(); saveRadio(); updateRadioStatus(); });
+function radioReport(){
+  var L=[], pads=listPads(), gp=currentGamepad();
+  L.push('Drone Hero radio report');
+  L.push('Browser: '+navigator.userAgent);
+  L.push('Devices the browser sees: '+pads.length);
+  pads.forEach(function(p){ L.push('  #'+p.index+' "'+p.id+'" mapping="'+(p.mapping||'')+'" axes='+p.axes.length+' buttons='+(p.buttons?p.buttons.length:0)+(gp&&p.index===gp.index?'  <- in use':'')); });
+  L.push('Device choice: '+(padPick==='auto'?'auto':padPick)+' | preset: '+radio.preset+' | stick mode: '+stickMode+' | deadband: '+radio.deadband);
+  L.push('Calibrated: '+radio.calibrated+' | radio live: '+radio.touched);
+  ['thr','yaw','pitch','roll'].forEach(function(fn){ var m=radio.map[fn];
+    L.push('  '+fn+': axis '+m.axis+(m.inv?' inverted':'')+' rest='+(+getRest(m.axis)).toFixed(3)+' min='+(+getMin(m.axis)).toFixed(3)+' max='+(+getMax(m.axis)).toFixed(3)); });
+  if(gp){
+    L.push('Raw axes now: '+Array.prototype.map.call(gp.axes,function(v,i){ return 'A'+i+'='+v.toFixed(3); }).join(' '));
+    var on=[]; (gp.buttons||[]).forEach(function(b,i){ if(b&&b.pressed) on.push(i); });
+    L.push('Buttons pressed now: '+(on.length?on.join(', '):'none'));
+    var v=computeRadioValues();
+    if(v) L.push('Sim reads: throttle '+Math.round(v.thr*100)+'% yaw '+v.yaw.toFixed(2)+' pitch '+v.pitch.toFixed(2)+' roll '+v.roll.toFixed(2));
+  } else L.push('No usable device (a radio shows up only after you move a stick on this page).');
+  return L.join('\n');
+}
+$('radioReportBtn').addEventListener('click',function(){ this.blur();
+  var txt=radioReport(), box=$('radioReportBox');
+  box.value=txt; box.style.display='';
+  var done=function(ok){ $('radioReportMsg').textContent = ok ? 'Copied — paste it into the chat.' : 'Select the text below and copy it.'; };
+  try{ navigator.clipboard.writeText(txt).then(function(){ done(true); },function(){ done(false); }); }catch(e){ done(false); }
+});
 document.querySelectorAll('.radioPreset').forEach(function(b){
   // Clicking a preset is an explicit "use this radio's standard setup":
   // reload its default axis map even over an existing calibration.
-  b.addEventListener('click',function(){ radio.presetLocked=true; radio.calibrated=false; applyPreset(b.dataset.preset,false); });
+  b.addEventListener('click',function(){ radio.presetLocked=true; radio.calibrated=false; applyPreset(b.dataset.preset,false); saveRadio(); });
 });
-$('stickModeSel').addEventListener('change',function(){ stickMode=parseInt(this.value,10)||3; applyStickMode(); });
+$('stickModeSel').addEventListener('change',function(){ stickMode=parseInt(this.value,10)||3; radio.modeChosen=true; applyStickMode(); saveRadio(); });
 $('radioDb').addEventListener('input',function(){ radio.deadband=parseFloat(this.value); $('radioDbVal').textContent=radio.deadband.toFixed(2); });
-$('armBtnSel').addEventListener('change',function(){ radio.armBtn=parseInt(this.value,10)||0; });
+$('radioDb').addEventListener('change',saveRadio);
+$('armBtnSel').addEventListener('change',function(){ var v=parseInt(this.value,10); radio.armBtn=isNaN(v)?0:v; radio.armSeen=false; saveRadio(); });
 ['thr','yaw','pitch','roll'].forEach(function(fn){
-  $('mapAxis_'+fn).addEventListener('change',function(){ radio.map[fn].axis=parseInt(this.value,10)||0; radio.calibrated=true; });
-  $('mapInv_'+fn).addEventListener('change',function(){ radio.map[fn].inv=this.checked; radio.calibrated=true; });
+  $('mapAxis_'+fn).addEventListener('change',function(){ radio.map[fn].axis=parseInt(this.value,10)||0; radio.calibrated=true; saveRadio(); });
+  $('mapInv_'+fn).addEventListener('change',function(){ radio.map[fn].inv=this.checked; radio.calibrated=true; saveRadio(); });
 });
 /* Wizard buttons blur themselves after every click: a focused button would
    otherwise swallow Space/Enter/arrows as "presses" and steal the keyboard
@@ -1542,15 +1688,23 @@ $('calSkipBtn').addEventListener('click',function(){ this.blur(); skipAssign(); 
 $('calCancelBtn').addEventListener('click',function(){ this.blur(); cancelCalibration(); });
 window.addEventListener('gamepadconnected',function(e){ onRadioSeen(e.gamepad); });
 window.addEventListener('gamepaddisconnected',function(e){
-  if(e.gamepad.index===radio.index){ radio.connected=false; radio.index=-1; radio.id=''; radio.touched=false; radio.firstAxes=null; updateRadioStatus(); }
+  delete padSeen[e.gamepad.index];
+  if(e.gamepad.index===radio.index){ dropRadio(); updateRadioStatus(); }
 });
 /* live stick-test bars + status refresh (throttled) */
 var lastRadioUI=0;
 function tickRadioUI(nowMs){
   if(nowMs-lastRadioUI<120) return; lastRadioUI=nowMs;
+  rescanPads();
   if(!radio.connected) currentGamepad(); // browsers expose the pad only after first input — poll for it
   updateRadioStatus();
   var vals=computeRadioValues();
+  var rawEl=$('rawAxes');
+  if(rawEl){
+    var rawTxt='Raw: —';
+    if(vals){ rawTxt='Raw:'; for(var ri=0;ri<vals.gp.axes.length;ri++) rawTxt+=' A'+ri+' '+(vals.gp.axes[ri]>=0?'+':'')+vals.gp.axes[ri].toFixed(2); }
+    if(rawEl.textContent!==rawTxt) rawEl.textContent=rawTxt;
+  }
   function setBar(fn,v,isThr){
     var fill=$('bar_'+fn), val=$('barVal_'+fn); if(!fill) return;
     if(v===null){ fill.style.width='0%'; val.textContent='—'; return; }
@@ -2054,7 +2208,7 @@ function loop(nowMs){
     }
   }
   if(renderer){ renderer.render(scene,camera); }
-  sampleCalibration(); tickRadioUI(nowMs);
+  sampleCalibration(); pollRadioButtons(); tickRadioUI(nowMs);
   if(typeof tickLiveTempo==='function') tickLiveTempo();
   tickPulse();
   drawLane(); updateOSD();
