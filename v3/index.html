@@ -2,6 +2,15 @@
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ON THE ONE — fly the song, land on the one</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0b1830">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="On The One">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
 <style>
 :root{--navy:#0b1830;--navy2:#13294b;--gold:#f2c14e;--gold2:#c9962a;--ink:#e9eef7;--dim:#9fb0c8}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;color:var(--ink)}
@@ -4799,6 +4808,38 @@ registerProcessor('dh-onset', DHOnset);`;var Jc=class{constructor(){this.ctx=nul
   }
   setInterval(apply, 400);
   apply();
+})();
+</script>
+
+<style>
+#otoInstall{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;gap:10px;align-items:center;background:rgba(11,24,48,.94);border:1px solid rgba(242,193,78,.65);border-radius:999px;padding:8px 10px 8px 16px;font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;color:#e9eef7;box-shadow:0 10px 30px rgba(0,0,0,.5);font-size:14px}
+#otoInstall b{color:#f2c14e;letter-spacing:.4px}
+#otoInstall button{font:inherit;cursor:pointer;border-radius:999px;border:0;padding:7px 14px;font-weight:800}
+#otoInstallGo{background:linear-gradient(180deg,#f6cf6a,#d9a73a);color:#10213f}
+#otoInstallX{background:none;color:#9fb0c8;font-weight:700;padding:7px 9px}
+</style>
+<div id="otoInstall" hidden>
+  <span id="otoInstallTxt"><b>ON THE ONE</b> &mdash; install as an app?</span>
+  <button id="otoInstallGo" type="button">Install</button>
+  <button id="otoInstallX" type="button" aria-label="Dismiss">&#10005;</button>
+</div>
+<script>
+(function(){
+  if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(function(){})}
+  var bar=document.getElementById('otoInstall'),go=document.getElementById('otoInstallGo'),txt=document.getElementById('otoInstallTxt'),dp=null;
+  function standalone(){return window.matchMedia('(display-mode: standalone)').matches||window.matchMedia('(display-mode: fullscreen)').matches||navigator.standalone===true}
+  function dismissed(){try{return sessionStorage.getItem('otoInstallDismissed')==='1'}catch(e){return false}}
+  function show(){if(standalone()||dismissed())return;bar.hidden=false}
+  function hide(){bar.hidden=true;try{sessionStorage.setItem('otoInstallDismissed','1')}catch(e){}}
+  document.getElementById('otoInstallX').addEventListener('click',hide);
+  window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;show()});
+  window.addEventListener('appinstalled',function(){dp=null;bar.hidden=true});
+  go.addEventListener('click',function(){
+    if(dp){var p=dp;dp=null;bar.hidden=true;p.prompt();p.userChoice.finally(function(){})}
+  });
+  /* iOS Safari has no install prompt: show the manual route once per session */
+  var ios=/iphone|ipad|ipod/i.test(navigator.userAgent),safari=/safari/i.test(navigator.userAgent)&&!/crios|fxios/i.test(navigator.userAgent);
+  if(ios&&safari&&!standalone()){txt.innerHTML='<b>ON THE ONE</b> &mdash; tap Share, then &ldquo;Add to Home Screen&rdquo; to install';go.style.display='none';show()}
 })();
 </script>
 </body></html>
