@@ -2,7 +2,7 @@
    Network-first for the game page so new builds always win when online;
    the cache is only an offline fallback. Cache-first for icons/manifest.
    Bump CACHE when the precache list changes. */
-var CACHE = 'oto-full-pwa-v1';
+var CACHE = 'oto-full-pwa-v2';
 var PRECACHE = [
   './',
   './index.html',
