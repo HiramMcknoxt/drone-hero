@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0b1830"><meta name="apple-mobile-web-app-capable" content="yes">
+<title>ON THE ONE — phone controller</title>
+<style>
+:root{--navy:#0b1830;--panel:#13294b;--gold:#f2c14e;--dim:#9fb0c8;--ok:#2fbf71;--bad:#ff8a7a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--navy);color:#fff;font:600 16px/1.35 Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;overflow:hidden;overscroll-behavior:none}
+body{touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+button{font:inherit;color:#fff;background:var(--panel);border:2px solid rgba(242,193,78,.55);border-radius:12px;padding:10px 14px;cursor:pointer;touch-action:manipulation}
+button:active{filter:brightness(1.3)}
+h1{margin:0;font-size:26px;font-weight:900;font-style:italic;letter-spacing:1px}h1 span{color:var(--gold)}
+.small{font-size:13px;color:var(--dim);font-weight:500}
+/* ---- connect screen */
+#connect{position:fixed;inset:0;overflow:auto;padding:max(18px,env(safe-area-inset-top)) 18px 18px;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}
+#connect .box{width:min(440px,100%);background:rgba(19,41,75,.7);border:1px solid rgba(242,193,78,.3);border-radius:16px;padding:16px}
+#code{width:100%;font:900 44px/1 Inter,system-ui,Arial,sans-serif;letter-spacing:14px;text-align:center;text-transform:uppercase;background:#0a1428;color:var(--gold);border:2px solid var(--gold);border-radius:12px;padding:10px 0 10px 14px}
+#go{width:100%;margin-top:12px;font-size:22px;font-weight:900;padding:14px;background:var(--gold);color:#13294b;border-color:var(--gold)}
+#cErr{color:var(--bad);min-height:1.3em;margin-top:10px;font-size:15px}
+.choose{display:flex;gap:8px;justify-content:center;margin-top:12px}.choose button{flex:1;font-size:14px;padding:8px}
+.choose button.on{background:var(--gold);color:#13294b;border-color:var(--gold)}
+/* ---- controller: Sticks = landscape, Mickey Mode = upright (portrait) */
+#pad{position:fixed;inset:0;display:none;touch-action:none}
+#top{position:absolute;left:0;right:0;top:0;display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;padding:max(6px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) 4px max(8px,env(safe-area-inset-left));z-index:3}
+#top button{padding:6px 10px;font-size:13px;border-radius:9px}
+#top button.on{background:var(--gold);color:#13294b;border-color:var(--gold)}
+#conn{display:flex;align-items:center;gap:6px;font-size:13px;padding:4px 8px;border-radius:9px;background:rgba(0,0,0,.25)}
+#conn i{width:11px;height:11px;border-radius:50%;background:var(--bad);display:inline-block}#conn.ok i{background:var(--ok)}
+#banner{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;background:rgba(10,20,40,.94);border:2px solid var(--bad);border-radius:14px;padding:14px 18px;text-align:center;font-size:18px;display:none;max-width:86vw}
+#turn{position:absolute;inset:0;z-index:5;background:rgba(11,24,48,.97);display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px;font-size:20px}
+#turn .ic{font-size:56px;line-height:1}
+#note{position:absolute;left:50%;bottom:max(6px,env(safe-area-inset-bottom));transform:translateX(-50%);font-size:12.5px;color:var(--dim);text-align:center;width:92%;z-index:2;pointer-events:none}
+#mid{position:absolute;left:50%;display:flex;flex-direction:column;gap:8px;align-items:center;z-index:2}
+#row1,#row2{display:flex;gap:8px;align-items:center}
+#arm{width:118px;height:56px;font-size:21px;font-weight:900;border-radius:16px;border-width:3px}
+#arm.armed{background:#c93030;border-color:#ffb3a8}
+#mode{min-width:118px;height:56px;font-size:13px;line-height:1.15}#mode.easy{background:#1f7a4d;border-color:#bff5d6}#mode.acro{background:#7a3fb8;border-color:#e2c7ff}
+#row2 button{font-size:12.5px;padding:7px 10px}
+/* trick pad (Easy Acro): D-pad = flips/rolls, then power loop, juicy flick, 180 */
+#tricks{display:none;gap:10px;align-items:center;--tb:46px}
+#tricks.on{display:flex}
+.dpad{display:grid;grid-template-columns:repeat(3,var(--tb));grid-template-rows:repeat(3,var(--tb));gap:4px}
+.dpad button,.xtra button{padding:0;border-radius:11px;font-size:10.5px;line-height:1.05;font-weight:800;touch-action:manipulation}
+.dpad button b{display:block;font-size:17px}
+.dpad .u{grid-area:1/2}.dpad .l{grid-area:2/1}.dpad .r{grid-area:2/3}.dpad .d{grid-area:3/2}
+.dpad .c{grid-area:2/2;border:none;background:none;color:var(--dim);font-size:9px;display:flex;align-items:center;justify-content:center;text-align:center}
+.xtra{display:flex;flex-direction:column;gap:4px}.xtra button{width:92px;height:var(--tb);font-size:11.5px}
+.dpad button.hit,.xtra button.hit{background:var(--gold);color:#13294b}
+#trickHint{font-size:11.5px;color:var(--dim);text-align:center;max-width:250px}
+.zone{position:absolute;touch-action:none}
+.stick{position:absolute;left:50%;top:56%;transform:translate(-50%,-50%);border-radius:50%;border:3px solid rgba(242,193,78,.5);background:rgba(19,41,75,.55)}
+.stick.thr{border-radius:22px}
+.knob{position:absolute;width:30%;height:30%;margin:-15% 0 0 -15%;border-radius:50%;background:var(--gold);box-shadow:0 0 0 4px rgba(0,0,0,.25);left:50%;top:50%}
+.lab{position:absolute;left:0;right:0;bottom:-30px;text-align:center;font-size:12px;color:var(--dim)}
+.slider{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border-radius:24px;border:3px solid rgba(242,193,78,.5);background:rgba(19,41,75,.55);overflow:hidden}
+.slider .fill{position:absolute;left:0;right:0;bottom:0;background:rgba(242,193,78,.35)}
+.slider .grip{position:absolute;left:6%;right:6%;height:44px;margin-top:-22px;border-radius:14px;background:var(--gold)}
+.yawb{display:flex;gap:12px;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+.yawb button{border-radius:20px;touch-action:none;font-size:30px}
+.yawb button.held{background:var(--gold);color:#13294b}
+#recenter{font-size:14px}
+/* Sticks: landscape — sticks left and right, buttons + trick pad in the middle */
+#pad.sticks .zone{top:0;bottom:0;width:31%}#pad.sticks .zone.left{left:0}#pad.sticks .zone.right{right:0}
+#pad.sticks .stick{width:min(29vw,58vh,240px);height:min(29vw,58vh,240px)}
+#pad.sticks #mid{top:calc(50% + 14px);transform:translate(-50%,-50%);width:38%}
+#pad.sticks #tricks{--tb:min(44px,11vh)}
+/* Mickey Mode: upright — buttons + trick pad on top, throttle slider and yaw buttons under the thumbs */
+#pad.mickey .zone{top:auto;bottom:0;height:40%;width:50%}#pad.mickey .zone.left{left:0}#pad.mickey .zone.right{right:0}
+#pad.mickey #mid{top:calc(max(6px,env(safe-area-inset-top)) + 84px);transform:translateX(-50%);width:96%}
+#pad.mickey .slider{width:min(26vw,110px);height:min(34vh,300px)}
+#pad.mickey .stick{width:min(44vw,32vh,230px);height:min(44vw,32vh,230px);top:50%}
+#pad.mickey .yawb button{width:min(19vw,90px);height:min(22vh,150px)}
+#pad.mickey #tricks{--tb:min(62px,15vw)}#pad.mickey .xtra button{width:min(30vw,120px);font-size:13px}
+#pad.mickey #note{bottom:calc(40% + 4px)}
+</style></head>
+<body>
+<div id="connect">
+  <h1>ON THE <span>ONE</span></h1>
+  <div class="small">Phone controller — no app needed</div>
+  <div class="box">
+    <div style="margin-bottom:8px">Type the 4-letter code from the game screen</div>
+    <input id="code" maxlength="4" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" inputmode="text" placeholder="····">
+    <button id="go">CONNECT</button>
+    <div id="cErr"></div>
+  </div>
+  <div class="box">
+    <div style="margin-bottom:4px">How do you want to fly?</div>
+    <div class="choose" id="layoutPick"><button data-l="sticks">Two sticks</button><button data-l="mickey">Mickey Mode — tilt the phone (hold it upright)</button></div>
+    <div class="choose" id="modePick"><button data-m="2">Right hand · throttle LEFT (Mode 2)</button><button data-m="3">Left hand · throttle RIGHT (Mode 3)</button></div>
+    <p class="small" style="margin:10px 0 0">Two sticks: hold the phone sideways. Mickey Mode: hold it upright like a DJI RC Motion — turn it like a steering wheel to turn, tilt it back to look up and climb, forward to dive; THROTTLE sets your speed and the thumb pad strafes and changes height. You can switch any time while flying.</p>
+  </div>
+</div>
+
+<div id="pad">
+  <div id="top">
+    <span id="conn"><i></i><b id="connT">Connecting…</b></span>
+    <button data-l="sticks" class="lay">Sticks</button><button data-l="mickey" class="lay">Mickey Mode</button>
+    <button id="swap">Throttle: left</button>
+    <button id="recenter">RE-CENTER</button>
+    <button id="quit">✕</button>
+  </div>
+  <div class="zone left" id="zL"></div>
+  <div class="zone right" id="zR"></div>
+  <div id="mid">
+    <div id="row1"><button id="arm">ARM</button><button id="mode">MODE<br>MANUAL</button></div>
+    <div id="tricks">
+      <div class="dpad"><button class="u" data-t="frontflip"><b>▲</b>FRONT<br>FLIP</button><button class="l" data-t="rollLeft"><b>◀</b>ROLL L</button><span class="c">TRICKS</span><button class="r" data-t="rollRight"><b>▶</b>ROLL R</button><button class="d" data-t="backflip"><b>▼</b>BACK<br>FLIP</button></div>
+      <div class="xtra"><button data-t="powerloop">POWER LOOP</button><button data-t="juicy">JUICY FLICK</button><button data-t="spin180">180</button></div>
+    </div>
+    <div id="trickHint">One-button tricks: set MODE to <b>EASY ACRO</b></div>
+    <div id="row2"><button id="reset">RESET</button><button id="pause">PAUSE</button></div>
+  </div>
+  <div id="note"></div>
+  <div id="turn"><div class="ic" id="turnIc">⟲</div><div id="turnT"></div><button id="turnSwap"></button><div class="small" id="turnS"></div></div>
+  <div id="banner"></div>
+</div>
+<script>(()=>{var nt="ABCDEFGHJKMNPQRSTUVWXYZ23456789";function S(t){return String(t||"").toUpperCase().split("").filter(e=>nt.includes(e)).join("").slice(0,4)}var it="wss://lobby.gaiusfpv.com",st="wss://on-the-one-lobby.coreyspangler.workers.dev",j="onthe1.pad.v1",rt=1e3/30,at=500,ct=4500;var b=.05,lt=30,dt=.6,ht=.08,ut=40,ft=.08,r=t=>document.getElementById(t),d=(t,e,n)=>Math.max(e,Math.min(n,t)),m=(t,e)=>{let n=Math.abs(t);return n<e?0:Math.sign(t)*(n-e)/(1-e)},c={layout:"sticks",mode:2};try{Object.assign(c,JSON.parse(localStorage.getItem(j)||"{}"))}catch{}var x=()=>{try{localStorage.setItem(j,JSON.stringify(c))}catch{}},_=Array.from(crypto.getRandomValues(new Uint8Array(9)),t=>(t%36).toString(36)).join(""),N=["frontflip","backflip","rollLeft","rollRight","powerloop","juicy","spin180"],a={th:0,y:0,p:0,r:0,e:0},U=new Array(4+N.length).fill(0),D=0,I="",$=0,o={ws:null,phase:"idle",code:"",lobbies:[],li:0,retry:0,gotReply:!1,game:!0},h={armed:!1,mode:"Manual",live:!0,state:"menu"};window.PAD={inp:a,k:U,C:o,game:h,prefs:c,sid:_,TRICK_KEYS:N};var pt=new URLSearchParams(location.search);r("code").value=S(decodeURIComponent(location.hash.slice(1)));r("code").oninput=()=>{let t=S(r("code").value);t!==r("code").value&&(r("code").value=t),r("cErr").textContent=""};function O(){for(let t of document.querySelectorAll("#layoutPick button"))t.classList.toggle("on",t.dataset.l===c.layout);for(let t of document.querySelectorAll("#modePick button"))t.classList.toggle("on",+t.dataset.m===c.mode)}for(let t of document.querySelectorAll("#layoutPick button"))t.onclick=()=>{c.layout=t.dataset.l,x(),O(),c.layout==="mickey"&&M()};for(let t of document.querySelectorAll("#modePick button"))t.onclick=()=>{c.mode=+t.dataset.m,x(),O()};O();r("code").addEventListener("keydown",t=>{t.key==="Enter"&&r("go").click()});r("go").onclick=()=>{let t=S(r("code").value);if(t.length!==4){r("cErr").textContent=`Type all ${4} letters of the code shown on the game screen.`;return}let e=c.layout==="mickey"?M():null;try{let s=document.documentElement,i=s.requestFullscreen?s.requestFullscreen({navigationUI:"hide"}):null;i&&i.then&&i.then(()=>screen.orientation&&screen.orientation.lock&&screen.orientation.lock("landscape").catch(()=>{})).catch(()=>{})}catch{}ot(),o.code=t,history.replaceState(null,"",location.pathname+location.search+"#"+t),r("connect").style.display="none",r("pad").style.display="block",u(c.layout,e);let n=pt.get("lobby");o.lobbies=n?[n]:[it,st],o.li=0,o.retry=0,o.tries=0,o.everOk=!1,o.phase="connecting",v()};function B(t){o.phase="dead",z(),r("pad").style.display="none",r("connect").style.display="flex",r("cErr").textContent=t||"";try{document.fullscreenElement&&document.exitFullscreen()}catch{}}function z(){let t=o.ws;if(o.ws=null,t)try{t.close(1e3,"bye")}catch{}}function v(){let t=o.lobbies[o.li];o.phase=o.phase==="lost"?"lost":"connecting",L();let e;try{e=new WebSocket(t.replace(/\/+$/,"")+(t.includes("?")?"&":"/?")+"type=pad&role=pad&code="+o.code)}catch{return G(!1)}o.ws=e,o.gotReply=!1;let n=setTimeout(()=>{if(e===o.ws&&!o.gotReply)try{e.close()}catch{}},ct);e.onopen=()=>{e.send(JSON.stringify({t:"hi",sid:_,layout:c.layout}))},e.onmessage=s=>{if(e!==o.ws)return;let i;try{i=JSON.parse(s.data)}catch{return}i&&!Array.isArray(i)&&V(i)},e.onclose=()=>{clearTimeout(n),e===o.ws&&(o.ws=null,G())}}function G(){if(!(o.phase==="dead"||o.phase==="quit"||o.phase==="idle")){if(!o.everOk){if(o.li+1<o.lobbies.length)return o.li++,v();if(o.li=0,++o.tries>=2)return B("Couldn't reach the game's server. Check the phone's internet connection and try again. (If it keeps happening, the server may not be set up for phones yet.)");o.phase="connecting",L(),setTimeout(()=>{o.phase==="connecting"&&v()},1200);return}o.phase="lost",L(),setTimeout(()=>{o.phase==="lost"&&v()},Math.min(4e3,400*2**o.retry++))}}var J={code:"That code doesn't match a game. Check the 4 letters on the game screen (in its PHONE CONTROLLER box) and try again.",taken:"Another phone is already using that code. On the game, press NEW CODE to get one for this phone.",expired:"That code ran out (codes last 10 minutes until a phone uses them). On the game, press NEW CODE.",gone:"The game stopped using this code (it was closed, or a new code was made). Get the new code from the game screen."};function V(t){if(t.t==="ok"){o.gotReply=!0,o.everOk=!0,o.phase="ok",o.retry=0,o.game=t.game!==!1,I="",Y(),L();return}if(t.t==="err"){o.gotReply=!0,B(J[t.why]||J.code);return}if(t.t==="game"){o.game=!!t.on,L();return}t.t==="st"&&(Object.assign(h,{armed:!!t.armed,mode:t.mode||"Manual",live:t.live!==!1,state:t.state||""}),k())}function L(){let t=o.phase==="ok";r("conn").classList.toggle("ok",t&&o.game),r("connT").textContent=t?o.game?"Connected \xB7 "+o.code:"Game reconnecting\u2026":o.phase==="lost"?"Connection lost":"Connecting\u2026";let e=r("banner");o.phase==="lost"?(e.style.display="block",e.innerHTML='Connection lost \u2014 trying again\u2026<div class="small" style="margin-top:6px">Your controls are paused. The game cuts the throttle until the phone is back.</div>'):e.style.display="none",k()}function k(){let t=r("arm");t.textContent=h.armed?"ARMED":"ARM",t.classList.toggle("armed",h.armed);let e=r("mode"),n=/acro/i.test(h.mode),s=!n&&/easy/i.test(h.mode);e.innerHTML="MODE<br>"+(n?"EASY ACRO":s?"EASY":"MANUAL"),e.classList.toggle("easy",s),e.classList.toggle("acro",n),r("tricks").classList.toggle("on",n),r("trickHint").style.display=n?"none":"";let i="";o.phase==="ok"&&!o.game?i="The game tab is reconnecting \u2014 hold on.":o.phase==="ok"&&h.state==="menu"?i="Connected! Start a flight on the computer \u2014 then throttle all the way down and press ARM.":o.phase==="ok"&&!h.live?i="The computer's keyboard or radio is flying right now \u2014 move a stick here to take over.":o.phase==="ok"&&c.layout==="mickey"&&!/easy/i.test(h.mode)?i="Mickey Mode is made for EASY MODE \u2014 tap MODE":o.phase==="ok"&&c.layout==="mickey"?i="Tilt \u2194 to turn \xB7 tilt back to look up (climb), forward to dive \xB7 THROTTLE = speed \xB7 thumb pad: strafe \u2194, height \u2195":o.phase==="ok"&&(i="Throttle stick stays where you leave it \xB7 arm with the throttle all the way down"),y&&(i=y+(i?" \xB7 "+i:"")),r("note").textContent=i}function Q(){let t={t:"s",sid:_,n:D,th:+a.th.toFixed(3),y:+a.y.toFixed(3),p:+a.p.toFixed(3),r:+a.r.toFixed(3),k:U.slice()};return c.layout==="mickey"&&(t.mm=1,t.e=+a.e.toFixed(3)),t}function Y(){if(o.phase!=="ok"||!o.ws||o.ws.readyState!==1)return;D++;let t=Q();t.n=D;let e=JSON.stringify(t);o.ws.send(e),I=JSON.stringify({...t,n:0}),$=performance.now()}setInterval(()=>{if(vt(),o.phase!=="ok")return;let t=Q();t.n=0,(JSON.stringify(t)!==I||performance.now()-$>=at)&&Y()},rt);var A=t=>()=>{o.phase==="ok"&&(U[t]++,Y())};r("arm").onclick=A(0);r("reset").onclick=A(1);r("pause").onclick=A(2);r("mode").onclick=A(3);for(let t of document.querySelectorAll("#tricks button[data-t]")){let e=4+N.indexOf(t.dataset.t),n=A(e);t.addEventListener("pointerdown",s=>{s.preventDefault(),n(),t.classList.add("hit"),setTimeout(()=>t.classList.remove("hit"),180)})}r("quit").onclick=()=>{o.phase="quit",z(),B(""),o.phase="idle"};var g={L:r("zL"),R:r("zR")},C={L:null,R:null};function u(t,e){c.layout=t==="mickey"?"mickey":"sticks",x(),r("pad").className=c.layout;try{document.fullscreenElement&&screen.orientation&&screen.orientation.lock&&screen.orientation.lock(c.layout==="mickey"?"portrait":"landscape").catch(()=>{})}catch{}for(let i of document.querySelectorAll("#top .lay"))i.classList.toggle("on",i.dataset.l===c.layout);r("recenter").style.display=c.layout==="mickey"?"":"none",r("swap").textContent=c.layout==="mickey"?c.mode===3?"Left hand":"Right hand":"Throttle: "+(c.mode===3?"right":"left");let n=c.mode===3?"R":"L",s=n==="L"?"R":"L";a.y=0,a.p=0,a.r=0,a.e=0;for(let i of["L","R"]){let l=g[i],E=l.cloneNode(!1);l.replaceWith(E),g[i]=E}c.layout==="sticks"?(C[n]=mt(g[n]),C[s]=yt(g[s]),P=!1):(C[n]=gt(g[n]),C[s]=kt(g[s]),P=!0,p=null),o.ws&&o.ws.readyState===1&&o.phase==="ok"&&o.ws.send(JSON.stringify({t:"lay",layout:c.layout})),c.layout==="mickey"&&bt(e),q(),k()}var w=!1;function q(){if(r("pad").style.display!=="block")return;let t=innerHeight>innerWidth,e=c.layout==="mickey";w=e?!t:t;let n=r("turn");n.style.display=w?"flex":"none",w&&(a.y=0,a.p=0,a.r=0,a.e=0,r("turnIc").textContent=e?"\u25AF":"\u25AD",r("turnT").innerHTML=e?"Hold the phone <b>upright</b> for Mickey Mode":"Turn the phone <b>sideways</b> for Two sticks",r("turnSwap").textContent=e?"Use Two sticks instead":"Use Mickey Mode instead",r("turnS").textContent="If the screen doesn't turn, switch off the phone's rotation lock (iPhone: Control Center \u2192 Portrait Orientation Lock).")}r("turnSwap").onclick=()=>{if(c.layout==="mickey")y="",u("sticks");else{let t=M();u("mickey",t)}};addEventListener("resize",()=>{q()});for(let t of document.querySelectorAll("#top .lay"))t.onclick=()=>{if(t.dataset.l==="mickey"){let e=M();u("mickey",e)}else y="",u("sticks")};r("swap").onclick=()=>{c.mode=c.mode===3?2:3,x(),O(),u(c.layout)};r("recenter").onclick=()=>{p=null,y="",k()};function R(t,e){let n=null;t.addEventListener("pointerdown",i=>{if(n===null){n=i.pointerId;try{t.setPointerCapture(n)}catch{}e.down(i),i.preventDefault()}}),t.addEventListener("pointermove",i=>{i.pointerId===n&&(e.move(i),i.preventDefault())});let s=i=>{i.pointerId===n&&(n=null,e.up(i))};t.addEventListener("pointerup",s),t.addEventListener("pointercancel",s),t.addEventListener("lostpointercapture",s)}function F(t,e,n){let s=document.createElement("div");return s.className=e,s.innerHTML=`<div class="knob"></div><div class="lab">${n}</div>`,t.appendChild(s),{el:s,knob:s.firstChild}}function mt(t){let e=F(t,"stick thr","THROTTLE \u2195 \xB7 YAW \u2194"),n=null,s=()=>{e.knob.style.left=50+a.y*50+"%",e.knob.style.top=100-a.th*100+"%"};return R(t,{down:i=>{n={x:i.clientX,y:i.clientY,th:a.th}},move:i=>{let l=e.el.getBoundingClientRect();a.th=d(n.th-(i.clientY-n.y)/l.height,0,1),a.y=m(d((i.clientX-n.x)/(l.width/2),-1,1),b),s()},up:()=>{a.y=0,s()}}),s(),e}function yt(t){let e=F(t,"stick","PITCH \u2195 \xB7 ROLL \u2194"),n=null,s=()=>{e.knob.style.left=50+a.r*50+"%",e.knob.style.top=50-a.p*50+"%"};return R(t,{down:i=>{n={x:i.clientX,y:i.clientY}},move:i=>{let l=e.el.getBoundingClientRect().width/2;a.r=m(d((i.clientX-n.x)/l,-1,1),b),a.p=m(d(-(i.clientY-n.y)/l,-1,1),b),s()},up:()=>{a.p=0,a.r=0,s()}}),s(),e}function gt(t){let e=document.createElement("div");e.className="slider",e.innerHTML='<div class="fill"></div><div class="grip"></div><div class="lab" style="bottom:6px;color:#fff">THROTTLE<br><small>forward speed</small></div>',t.appendChild(e);let n=null,s=()=>{e.children[0].style.height=a.th*100+"%",e.children[1].style.top=100-a.th*100+"%"};return R(t,{down:i=>{n={y:i.clientY,th:a.th}},move:i=>{a.th=d(n.th-(i.clientY-n.y)/e.getBoundingClientRect().height,0,1),s()},up:()=>{}}),s(),e}function kt(t){let e=F(t,"stick tpad","STRAFE \u2194 \xB7 UP / DOWN \u2195"),n=null,s=()=>{e.knob.style.left=50+a.r*50+"%",e.knob.style.top=50-a.e*50+"%"};return R(t,{down:i=>{n={x:i.clientX,y:i.clientY}},move:i=>{let l=e.el.getBoundingClientRect().width/2;a.r=m(d((i.clientX-n.x)/l,-1,1),b),a.e=m(d(-(i.clientY-n.y)/l,-1,1),b),s()},up:()=>{a.r=0,a.e=0,s()}}),s(),e}function vt(){w&&(a.y=0,a.p=0,a.r=0,a.e=0)}var P=!1,p=null,y="",Z=0;function wt(t,e){let n=t*Math.PI/180,s=e*Math.PI/180,i=Math.cos(n)*Math.sin(s),l=-Math.sin(n),E=-Math.cos(n)*Math.cos(s),T=(screen.orientation&&typeof screen.orientation.angle=="number"?screen.orientation.angle:window.orientation||0)*Math.PI/180;return{x:i*Math.cos(T)-l*Math.sin(T),y:i*Math.sin(T)+l*Math.cos(T),z:E}}function tt(t,e){let n=wt(t,e),s=180/Math.PI;return{roll:Math.asin(d(n.x,-1,1))*s,pitch:Math.atan2(n.y,-n.z)*s}}function et(t){if(t.beta===null||t.beta===void 0||(Z=performance.now(),!P||w))return;let e=tt(t.beta,t.gamma||0);p||(p=e);let n=e.pitch-p.pitch;n>180&&(n-=360),n<-180&&(n+=360),a.p=m(d(-n/ut,-1,1),ft),a.y=m(d((e.roll-p.roll)/lt,-1,1),ht)*dt}addEventListener("deviceorientation",et);var X=()=>{p=null,setTimeout(q,50)};screen.orientation?screen.orientation.addEventListener("change",X):addEventListener("orientationchange",X);var f=null;function M(){if(typeof DeviceOrientationEvent=="undefined")return f=Promise.resolve("none"),f;if(typeof DeviceOrientationEvent.requestPermission=="function")try{f=DeviceOrientationEvent.requestPermission().then(t=>t==="granted"?"granted":"denied",()=>"denied")}catch{f=Promise.resolve("denied")}else f=Promise.resolve("granted");return f}var K={denied:"Motion sensors are turned off for this page, so Mickey Mode can't work \u2014 switched to Two sticks. (To allow it: close this tab, open the link again and tap Allow when asked.)",none:"This phone didn't send any tilt information, so Mickey Mode can't work here \u2014 switched to Two sticks."};function bt(t){(t||f||M()).then(n=>{if(n!=="granted")return W(n==="none"?"none":"denied");let s=performance.now();setTimeout(()=>{c.layout==="mickey"&&Z<s&&W("none")},1500)})}function W(t){y=K[t],u("sticks"),y=K[t],k()}var Lt=null;async function ot(){try{navigator.wakeLock&&document.visibilityState==="visible"&&(Lt=await navigator.wakeLock.request("screen"))}catch{}}document.addEventListener("visibilitychange",()=>{document.visibilityState==="visible"&&r("pad").style.display==="block"&&(ot(),!o.ws&&(o.phase==="lost"||o.phase==="ok")&&(o.phase="lost",v()))});for(let t of["gesturestart","gesturechange","dblclick"])document.addEventListener(t,e=>e.preventDefault(),{passive:!1});document.addEventListener("touchmove",t=>{r("pad").style.display==="block"&&t.preventDefault()},{passive:!1});window.PAD.tiltAngles=tt;window.PAD.onOrient=et;window.PAD.setLayout=u;window.PAD.mirror=k;window.PAD.onMsg=V;})();
+</script>
+</body></html>
