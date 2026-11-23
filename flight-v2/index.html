@@ -953,10 +953,11 @@ var willaLoaded=false, willaSource='';
 var splatGrid=null; // orientation grid kept as a child of the splat object
 var WILLA_URL=''; // Richie fork: bundled chunks only, no hosted copy
 var SPLAT_MODELS={
- new:{parts:31,total:45764224,count:1430132,base:'assets/native-v1/',label:'NEW - native 1920 train, 1.43M'},
- old:{parts:17,total:24320032,count:760001,base:'../flight/assets/flight-v1/',label:'OLD - Nov 21, 960px train, 760k'}
+ new:{parts:31,total:45764224,count:1430132,base:'assets/native-v1/',label:'NEW - native 1920 train, 1.43M',fixed:[26.322993,-1.523,-7.344446]},
+ lite:{parts:11,total:16000032,count:500001,base:'assets/native-lite-v1/',label:'NEW LITE - native 1920 train, 500k',fixed:[26.322993,-1.523,-7.344446]},
+ old:{parts:17,total:24320032,count:760001,base:'../flight/assets/flight-v1/',label:'OLD - Nov 21, 960px train, 760k',fixed:null}
 };
-var SPLAT_MODEL=(new URLSearchParams(location.search).get('model')==='old')?'old':'new';
+var SPLAT_MODEL=(function(){var m=new URLSearchParams(location.search).get('model'); return SPLAT_MODELS[m]?m:'new';})();
 var WILLA_CFG=SPLAT_MODELS[SPLAT_MODEL];
 var WILLA_PART_COUNT=WILLA_CFG.parts, WILLA_PART_BYTES=1500000, WILLA_TOTAL_BYTES=WILLA_CFG.total; // bundled copy, chunked (see willaFetchBundled)
 var WILLA_SPAWN={x:0, y:0.08, z:0.05}; // Flight Splat v2 (Nov 7, 2026 flight, GLOMAP low-phase dataset): LOW and CLOSE — 0.08 up (mid-canopy height in this normalized-scale scene), just south of the densest cluster's centroid (0.013, -0.004). The scene core is ~0.37 x 0.24 units (p1-p99), a low corridor through the canopy, so spawn sits inside it, not above it.
@@ -1145,6 +1146,7 @@ function parseSplat(buf, flipYDown){
   }
   // recentre XZ on centroid, drop min-Y to 0 — splat exports vary wildly in origin
   var cx=0,cz=0; for(var j=0;j<count;j+=9){ cx+=pos[j*3]; cz+=pos[j*3+2]; } var n9=Math.ceil(count/9); cx/=n9; cz/=n9;
+  if(flipYDown && typeof WILLA_CFG!=='undefined' && WILLA_CFG.fixed){ cx=WILLA_CFG.fixed[0]; cz=WILLA_CFG.fixed[2]; minY=WILLA_CFG.fixed[1]; } // fixed shared transform: full and lite cuts land in the same world (Part 3 constants)
   if(false){ // RICHIE FORK: the bundled chunk data is PRE-TRANSFORMED on disk (Z-up -> Y-up baked in, ground slab lifted to y=0), so no parse-time flip may run here — it would double-apply.
     // (Historical Willa-fork note: a data-space 180-degree turn about X,
     // y -> H - y, z -> -z, is how an upside-down export gets corrected in
@@ -2363,9 +2365,9 @@ requestAnimationFrame(loop);
 (function(){
  var d=document.createElement('div');
  d.style.cssText='position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:99999;background:rgba(10,12,20,.82);color:#e8e6df;font:13px/1.45 system-ui,sans-serif;padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.25);text-align:center;max-width:92vw';
- var cur=(new URLSearchParams(location.search).get('model')==='old')?'old':'new';
+ var cur=(function(){var m=new URLSearchParams(location.search).get('model'); return (m==='old'||m==='lite')?m:'new';})();
  function btn(m,t){return '<a href="?model='+m+'" style="display:inline-block;margin:0 4px;padding:3px 10px;border-radius:6px;text-decoration:none;color:#fff;background:'+(cur===m?'#7a5c14':'#2a3040')+';border:1px solid rgba(255,255,255,.35)">'+t+'</a>';}
- d.innerHTML='<b>TEST FORK</b> &middot; visuals only, no collision &middot; showing: <b>'+(cur==='old'?'OLD Nov 21 (760k)':'NEW native (1.43M)')+'</b><br>'+btn('new','New splat')+btn('old','Old splat')+'<a href="/flight/" style="display:inline-block;margin:0 4px;padding:3px 10px;border-radius:6px;text-decoration:none;color:#fff;background:#20301e;border:1px solid rgba(255,255,255,.35)">Live /flight/</a>';
+ d.innerHTML='<b>TEST FORK</b> &middot; visuals only, no collision &middot; showing: <b>'+(cur==='old'?'OLD Nov 21 (760k)':cur==='lite'?'NEW LITE native (500k)':'NEW native (1.43M)')+'</b><br>'+btn('new','New full')+btn('lite','New lite')+btn('old','Old splat')+'<a href="/flight/" style="display:inline-block;margin:0 4px;padding:3px 10px;border-radius:6px;text-decoration:none;color:#fff;background:#20301e;border:1px solid rgba(255,255,255,.35)">Live /flight/</a>';
  document.body.appendChild(d);
 })();
 </script>
