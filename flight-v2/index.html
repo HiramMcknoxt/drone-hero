@@ -1102,8 +1102,8 @@ function loadSplatBuffer(buf, name){
   setTimeout(function(){
     try{
       var isWilla=/^richie\.splat$/i.test(name);
-      var pts = isPly? parsePly(buf) : parseSplat(buf, isWilla);
       var srcNote=willaSource; // capture now: installSplat->clearSplat resets it
+      var pts = isPly? parsePly(buf) : parseSplat(buf, isWilla || srcNote==='bundled copy');
       installSplat(pts, isWilla? 'Flight Splat — onthe1_flight.splat' : name, isWilla);
       var count=pts.geometry.attributes.position.count;
       if(isWilla){
