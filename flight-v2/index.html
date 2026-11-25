@@ -962,7 +962,25 @@ var SPLAT_MODELS={
 var SPLAT_MODEL=(function(){var m=new URLSearchParams(location.search).get('model'); return SPLAT_MODELS[m]?m:'new';})();
 var WILLA_CFG=SPLAT_MODELS[SPLAT_MODEL];
 var WILLA_PART_COUNT=WILLA_CFG.parts, WILLA_PART_BYTES=1500000, WILLA_TOTAL_BYTES=WILLA_CFG.total; // bundled copy, chunked (see willaFetchBundled)
-var WILLA_SPAWN={x:0, y:0.08, z:0.05}; // Flight Splat v2 (Nov 7, 2026 flight, GLOMAP low-phase dataset): LOW and CLOSE — 0.08 up (mid-canopy height in this normalized-scale scene), just south of the densest cluster's centroid (0.013, -0.004). The scene core is ~0.37 x 0.24 units (p1-p99), a low corridor through the canopy, so spawn sits inside it, not above it.
+var WILLA_SPAWN={x:0, y:0.08, z:0.05};
+/* Spawn picker (Vesper, Nov 25 2026): ?spawn=core|high|south|overview or
+   ?spawn=x,y,z with optional &yaw=degrees. Preset yaws face the park core. */
+var SPAWNS={
+ core:{pos:[0,0.08,0.05],yaw:null,label:'Core low'},
+ high:{pos:[0,16.5,55],yaw:0,label:'Core high'},
+ south:{pos:[-30,2.5,120],yaw:-0.244,label:'South approach'},
+ overview:{pos:[150,55,170],yaw:0.723,label:'Overview'}
+};
+var SPAWN_OVERRIDE=(function(){
+ try{
+  var q=new URLSearchParams(location.search); var s=q.get('spawn'); if(!s) return null;
+  var yaw=q.get('yaw'); yaw=(yaw===null?null:parseFloat(yaw)*Math.PI/180);
+  if(SPAWNS[s]){ var p=SPAWNS[s]; return {pos:new THREE.Vector3(p.pos[0],p.pos[1],p.pos[2]), yaw:(yaw!==null?yaw:p.yaw), label:p.label}; }
+  var parts=s.split(',').map(Number);
+  if(parts.length===3 && parts.every(function(n){return isFinite(n);})) return {pos:new THREE.Vector3(parts[0],parts[1],parts[2]), yaw:yaw, label:'Custom'};
+ }catch(e){}
+ return null;
+})(); // Flight Splat v2 (Nov 7, 2026 flight, GLOMAP low-phase dataset): LOW and CLOSE — 0.08 up (mid-canopy height in this normalized-scale scene), just south of the densest cluster's centroid (0.013, -0.004). The scene core is ~0.37 x 0.24 units (p1-p99), a low corridor through the canopy, so spawn sits inside it, not above it.
 var ENV_DEFS={
   meadow:{sky:0x87b5d9, fog:0x9fc3dd, ground:0x4a7c43, sun:0xfff2d8, sunPos:[60,90,30], amb:0.75},
   sunset:{sky:0xe8905a, fog:0xd98a5e, ground:0x5d7040, sun:0xffc37a, sunPos:[-80,22,-40], amb:0.6},
@@ -1234,7 +1252,7 @@ function resetDrone(){
   // Richie fork: with the scene splat loaded, start inside the scene instead
   // of on the pad — low over the scene's dense core, nose across it
   // (identity attitude looks down -Z), so the player is never trapped under it.
-  var startPos = willaLoaded? new THREE.Vector3(WILLA_SPAWN.x, WILLA_SPAWN.y, WILLA_SPAWN.z) : new THREE.Vector3(0,0.35,8);
+  var startPos = (willaLoaded || (typeof SCENE_LOADED !== 'undefined' && SCENE_LOADED))? (SPAWN_OVERRIDE? SPAWN_OVERRIDE.pos.clone() : new THREE.Vector3(WILLA_SPAWN.x, WILLA_SPAWN.y, WILLA_SPAWN.z)) : new THREE.Vector3(0,0.35,8);
   drone={
     pos:startPos, vel:new THREE.Vector3(),
     quat:new THREE.Quaternion(), throttle:0,
@@ -1242,6 +1260,7 @@ function resetDrone(){
     trickActive:false, trickDur:0, apexHold:0,
     battery:100, crashed:false, armed:false, airTime:0
   };
+  if((willaLoaded || (typeof SCENE_LOADED !== 'undefined' && SCENE_LOADED)) && SPAWN_OVERRIDE && SPAWN_OVERRIDE.yaw!==null && SPAWN_OVERRIDE.yaw!==undefined){ drone.quat.setFromEuler(new THREE.Euler(0, SPAWN_OVERRIDE.yaw, 0)); }
   gateList.forEach(function(g){ g.userData.passed=false; g.children.forEach(function(c){ c.material=g.userData.mats[0]; }); });
   hideCenter();
 }
@@ -2364,6 +2383,8 @@ loadWillaScene();
 requestAnimationFrame(loop);
 </script>
 
+
+
 <script>
 /* ================= TRUESPLAT (in-house, Vesper Nov 24 2026) =================
    Owlsight's true-gaussian renderer (antimatter15 lineage, extracted from
@@ -2372,6 +2393,7 @@ requestAnimationFrame(loop);
    the ground plane and the gates; the splat canvas is transparent where no
    gaussian covers. Points mode remains the fallback and the default for
    user-loaded files. */
+var SCENE_LOADED = false;
 (function(){
 "use strict";
 function getProjectionMatrix(fx, fy, width, height) {
@@ -3014,6 +3036,10 @@ TS.setMode = function(on){
 
 function tsFrame(){
   requestAnimationFrame(tsFrame);
+  if (typeof SPAWN_OVERRIDE !== 'undefined' && SPAWN_OVERRIDE && SCENE_LOADED && !TS._spawnApplied && typeof splatObj !== 'undefined' && splatObj && typeof resetDrone === 'function') {
+    TS._spawnApplied = true;
+    resetDrone();
+  }
   if (!TS.on || !TS.glReady || !canvas) return;
   var haveScene = TS.hasBuffer && typeof splatObj !== 'undefined' && splatObj && typeof camera !== 'undefined' && camera && typeof renderer !== 'undefined' && renderer;
   if (!haveScene) { canvas.style.display = 'none'; return; }
@@ -3051,6 +3077,8 @@ loadSplatBuffer = function(buf, name){
   if (!/\.ply$/i.test(name)) {
     window._tsBuf = buf; window._tsName = name;
     window._tsFlip = /^richie\.splat$/i.test(name) || (typeof willaSource !== 'undefined' && willaSource === 'bundled copy');
+    SCENE_LOADED = !!window._tsFlip;
+    TS._spawnApplied = false;
     TS.hasBuffer = false;
     if (TS.on) TS.setData(buf, window._tsFlip);
   }
@@ -3071,7 +3099,7 @@ TS.setMode(_rendParam ? _rendParam !== 'points' : (_saved ? _saved === 'true' : 
  d.style.cssText='position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:99999;background:rgba(10,12,20,.82);color:#e8e6df;font:13px/1.45 system-ui,sans-serif;padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.25);text-align:center;max-width:92vw';
  var cur=(function(){var m=new URLSearchParams(location.search).get('model'); return (m==='old'||m==='lite'||m==='v3'||m==='v3lite')?m:'new';})();
  function btn(m,t){return '<a href="?model='+m+'" style="display:inline-block;margin:0 4px;padding:3px 10px;border-radius:6px;text-decoration:none;color:#fff;background:'+(cur===m?'#7a5c14':'#2a3040')+';border:1px solid rgba(255,255,255,.35)">'+t+'</a>';}
- d.innerHTML='<b>TEST FORK</b> &middot; visuals only, no collision &middot; showing: <b>'+(cur==='old'?'OLD Nov 21 (760k)':cur==='lite'?'NEW LITE native (500k)':cur==='v3'?'V3 TILED (2.39M)':cur==='v3lite'?'V3 TILED LITE (500k)':'NEW native (1.43M)')+'</b><br>'+btn('new','New full')+btn('lite','New lite')+btn('v3','V3 full')+btn('v3lite','V3 lite')+btn('old','Old splat')+'<a href="?model='+cur+'&renderer=true" id="tsRendTrue" style="display:inline-block;margin:0 4px;padding:3px 10px;border-radius:6px;text-decoration:none;color:#fff;background:#2a3040;border:1px solid rgba(255,255,255,.35)">True splats</a>'+'<a href="?model='+cur+'&renderer=points" id="tsRendPoints" style="display:inline-block;margin:0 4px;padding:3px 10px;border-radius:6px;text-decoration:none;color:#fff;background:#2a3040;border:1px solid rgba(255,255,255,.35)">Points</a>'+'<span id="tsRendNote" style="margin-left:6px;opacity:.8"></span>' +'<a href="/flight/" style="display:inline-block;margin:0 4px;padding:3px 10px;border-radius:6px;text-decoration:none;color:#fff;background:#20301e;border:1px solid rgba(255,255,255,.35)">Live /flight/</a>';
+ d.innerHTML='<b>TEST FORK</b> &middot; visuals only, no collision &middot; showing: <b>'+(cur==='old'?'OLD Nov 21 (760k)':cur==='lite'?'NEW LITE native (500k)':cur==='v3'?'V3 TILED (2.39M)':cur==='v3lite'?'V3 TILED LITE (500k)':'NEW native (1.43M)')+'</b><br>'+btn('new','New full')+btn('lite','New lite')+btn('v3','V3 full')+btn('v3lite','V3 lite')+btn('old','Old splat')+'<a href="?model='+cur+'&renderer=true" id="tsRendTrue" style="display:inline-block;margin:0 4px;padding:3px 10px;border-radius:6px;text-decoration:none;color:#fff;background:#2a3040;border:1px solid rgba(255,255,255,.35)">True splats</a>'+'<a href="?model='+cur+'&renderer=points" id="tsRendPoints" style="display:inline-block;margin:0 4px;padding:3px 10px;border-radius:6px;text-decoration:none;color:#fff;background:#2a3040;border:1px solid rgba(255,255,255,.35)">Points</a>'+'<span id="tsRendNote" style="margin-left:6px;opacity:.8"></span>'+'<br>start: '+['core','high','south','overview'].map(function(k){var lab={core:'Core low',high:'Core high',south:'South approach',overview:'Overview'}[k];var act=(function(){var s=new URLSearchParams(location.search).get('spawn');return (s||'core')===k;})();return '<a href="?model='+cur+'&spawn='+k+(function(){var r=new URLSearchParams(location.search).get('renderer');return r?('&renderer='+r):'';})()+'" style="display:inline-block;margin:0 4px;padding:3px 10px;border-radius:6px;text-decoration:none;color:#fff;background:'+(act?'#7a5c14':'#2a3040')+';border:1px solid rgba(255,255,255,.35)">'+lab+'</a>';}).join('') +'<a href="/flight/" style="display:inline-block;margin:0 4px;padding:3px 10px;border-radius:6px;text-decoration:none;color:#fff;background:#20301e;border:1px solid rgba(255,255,255,.35)">Live /flight/</a>';
  document.body.appendChild(d);
 })();
 </script>
