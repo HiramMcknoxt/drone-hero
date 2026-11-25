@@ -2363,13 +2363,715 @@ bindTouch('touchL',true); bindTouch('touchR',false);
 loadWillaScene();
 requestAnimationFrame(loop);
 </script>
+
+<script>
+/* ================= TRUESPLAT (in-house, Vesper Nov 24 2026) =================
+   Owlsight's true-gaussian renderer (antimatter15 lineage, extracted from
+   Owlsight.html) layered over this fork's THREE scene. The splat canvas sits
+   ABOVE the THREE canvas: THREE keeps the sky (blue, per the standing rule),
+   the ground plane and the gates; the splat canvas is transparent where no
+   gaussian covers. Points mode remains the fallback and the default for
+   user-loaded files. */
+(function(){
+"use strict";
+function getProjectionMatrix(fx, fy, width, height) {
+    const znear = 0.2;
+    const zfar = 200;
+    return [
+        [(2 * fx) / width, 0, 0, 0],
+        [0, -(2 * fy) / height, 0, 0],
+        [0, 0, zfar / (zfar - znear), 1],
+        [0, 0, -(zfar * znear) / (zfar - znear), 0],
+    ].flat();
+}
+
+function getViewMatrix(camera) {
+    const R = camera.rotation.flat();
+    const t = camera.position;
+    const camToWorld = [
+        [R[0], R[1], R[2], 0],
+        [R[3], R[4], R[5], 0],
+        [R[6], R[7], R[8], 0],
+        [
+            -t[0] * R[0] - t[1] * R[3] - t[2] * R[6],
+            -t[0] * R[1] - t[1] * R[4] - t[2] * R[7],
+            -t[0] * R[2] - t[1] * R[5] - t[2] * R[8],
+            1,
+        ],
+    ].flat();
+    return camToWorld;
+}
+// function translate4(a, x, y, z) {
+//     return [
+//         ...a.slice(0, 12),
+//         a[0] * x + a[4] * y + a[8] * z + a[12],
+//         a[1] * x + a[5] * y + a[9] * z + a[13],
+//         a[2] * x + a[6] * y + a[10] * z + a[14],
+//         a[3] * x + a[7] * y + a[11] * z + a[15],
+//     ];
+// }
+
+function multiply4(a, b) {
+    return [
+        b[0] * a[0] + b[1] * a[4] + b[2] * a[8] + b[3] * a[12],
+        b[0] * a[1] + b[1] * a[5] + b[2] * a[9] + b[3] * a[13],
+        b[0] * a[2] + b[1] * a[6] + b[2] * a[10] + b[3] * a[14],
+        b[0] * a[3] + b[1] * a[7] + b[2] * a[11] + b[3] * a[15],
+        b[4] * a[0] + b[5] * a[4] + b[6] * a[8] + b[7] * a[12],
+        b[4] * a[1] + b[5] * a[5] + b[6] * a[9] + b[7] * a[13],
+        b[4] * a[2] + b[5] * a[6] + b[6] * a[10] + b[7] * a[14],
+        b[4] * a[3] + b[5] * a[7] + b[6] * a[11] + b[7] * a[15],
+        b[8] * a[0] + b[9] * a[4] + b[10] * a[8] + b[11] * a[12],
+        b[8] * a[1] + b[9] * a[5] + b[10] * a[9] + b[11] * a[13],
+        b[8] * a[2] + b[9] * a[6] + b[10] * a[10] + b[11] * a[14],
+        b[8] * a[3] + b[9] * a[7] + b[10] * a[11] + b[11] * a[15],
+        b[12] * a[0] + b[13] * a[4] + b[14] * a[8] + b[15] * a[12],
+        b[12] * a[1] + b[13] * a[5] + b[14] * a[9] + b[15] * a[13],
+        b[12] * a[2] + b[13] * a[6] + b[14] * a[10] + b[15] * a[14],
+        b[12] * a[3] + b[13] * a[7] + b[14] * a[11] + b[15] * a[15],
+    ];
+}
+
+function invert4(a) {
+    let b00 = a[0] * a[5] - a[1] * a[4];
+    let b01 = a[0] * a[6] - a[2] * a[4];
+    let b02 = a[0] * a[7] - a[3] * a[4];
+    let b03 = a[1] * a[6] - a[2] * a[5];
+    let b04 = a[1] * a[7] - a[3] * a[5];
+    let b05 = a[2] * a[7] - a[3] * a[6];
+    let b06 = a[8] * a[13] - a[9] * a[12];
+    let b07 = a[8] * a[14] - a[10] * a[12];
+    let b08 = a[8] * a[15] - a[11] * a[12];
+    let b09 = a[9] * a[14] - a[10] * a[13];
+    let b10 = a[9] * a[15] - a[11] * a[13];
+    let b11 = a[10] * a[15] - a[11] * a[14];
+    let det =
+        b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+    if (!det) return null;
+    return [
+        (a[5] * b11 - a[6] * b10 + a[7] * b09) / det,
+        (a[2] * b10 - a[1] * b11 - a[3] * b09) / det,
+        (a[13] * b05 - a[14] * b04 + a[15] * b03) / det,
+        (a[10] * b04 - a[9] * b05 - a[11] * b03) / det,
+        (a[6] * b08 - a[4] * b11 - a[7] * b07) / det,
+        (a[0] * b11 - a[2] * b08 + a[3] * b07) / det,
+        (a[14] * b02 - a[12] * b05 - a[15] * b01) / det,
+        (a[8] * b05 - a[10] * b02 + a[11] * b01) / det,
+        (a[4] * b10 - a[5] * b08 + a[7] * b06) / det,
+        (a[1] * b08 - a[0] * b10 - a[3] * b06) / det,
+        (a[12] * b04 - a[13] * b02 + a[15] * b00) / det,
+        (a[9] * b02 - a[8] * b04 - a[11] * b00) / det,
+        (a[5] * b07 - a[4] * b09 - a[6] * b06) / det,
+        (a[0] * b09 - a[1] * b07 + a[2] * b06) / det,
+        (a[13] * b01 - a[12] * b03 - a[14] * b00) / det,
+        (a[8] * b03 - a[9] * b01 + a[10] * b00) / det,
+    ];
+}
+
+function rotate4(a, rad, x, y, z) {
+    let len = Math.hypot(x, y, z);
+    x /= len;
+    y /= len;
+    z /= len;
+    let s = Math.sin(rad);
+    let c = Math.cos(rad);
+    let t = 1 - c;
+    let b00 = x * x * t + c;
+    let b01 = y * x * t + z * s;
+    let b02 = z * x * t - y * s;
+    let b10 = x * y * t - z * s;
+    let b11 = y * y * t + c;
+    let b12 = z * y * t + x * s;
+    let b20 = x * z * t + y * s;
+    let b21 = y * z * t - x * s;
+    let b22 = z * z * t + c;
+    return [
+        a[0] * b00 + a[4] * b01 + a[8] * b02,
+        a[1] * b00 + a[5] * b01 + a[9] * b02,
+        a[2] * b00 + a[6] * b01 + a[10] * b02,
+        a[3] * b00 + a[7] * b01 + a[11] * b02,
+        a[0] * b10 + a[4] * b11 + a[8] * b12,
+        a[1] * b10 + a[5] * b11 + a[9] * b12,
+        a[2] * b10 + a[6] * b11 + a[10] * b12,
+        a[3] * b10 + a[7] * b11 + a[11] * b12,
+        a[0] * b20 + a[4] * b21 + a[8] * b22,
+        a[1] * b20 + a[5] * b21 + a[9] * b22,
+        a[2] * b20 + a[6] * b21 + a[10] * b22,
+        a[3] * b20 + a[7] * b21 + a[11] * b22,
+        ...a.slice(12, 16),
+    ];
+}
+
+function translate4(a, x, y, z) {
+    return [
+        ...a.slice(0, 12),
+        a[0] * x + a[4] * y + a[8] * z + a[12],
+        a[1] * x + a[5] * y + a[9] * z + a[13],
+        a[2] * x + a[6] * y + a[10] * z + a[14],
+        a[3] * x + a[7] * y + a[11] * z + a[15],
+    ];
+}
+
+function createWorker(self) {
+    let buffer;
+    let vertexCount = 0;
+    let viewProj;
+    // 6*4 + 4 + 4 = 8*4
+    // XYZ - Position (Float32)
+    // XYZ - Scale (Float32)
+    // RGBA - colors (uint8)
+    // IJKL - quaternion/rot (uint8)
+    const rowLength = 3 * 4 + 3 * 4 + 4 + 4;
+    let lastProj = [];
+    let depthIndex = new Uint32Array();
+    let lastVertexCount = 0;
+
+    var _floatView = new Float32Array(1);
+    var _int32View = new Int32Array(_floatView.buffer);
+
+    function floatToHalf(float) {
+        _floatView[0] = float;
+        var f = _int32View[0];
+
+        var sign = (f >> 31) & 0x0001;
+        var exp = (f >> 23) & 0x00ff;
+        var frac = f & 0x007fffff;
+
+        var newExp;
+        if (exp == 0) {
+            newExp = 0;
+        } else if (exp < 113) {
+            newExp = 0;
+            frac |= 0x00800000;
+            frac = frac >> (113 - exp);
+            if (frac & 0x01000000) {
+                newExp = 1;
+                frac = 0;
+            }
+        } else if (exp < 142) {
+            newExp = exp - 112;
+        } else {
+            newExp = 31;
+            frac = 0;
+        }
+
+        return (sign << 15) | (newExp << 10) | (frac >> 13);
+    }
+
+    function packHalf2x16(x, y) {
+        return (floatToHalf(x) | (floatToHalf(y) << 16)) >>> 0;
+    }
+
+    function generateTexture() {
+        if (!buffer) return;
+        const f_buffer = new Float32Array(buffer);
+        const u_buffer = new Uint8Array(buffer);
+
+        var texwidth = 1024 * 2; // Set to your desired width
+        var texheight = Math.ceil((2 * vertexCount) / texwidth); // Set to your desired height
+        var texdata = new Uint32Array(texwidth * texheight * 4); // 4 components per pixel (RGBA)
+        var texdata_c = new Uint8Array(texdata.buffer);
+        var texdata_f = new Float32Array(texdata.buffer);
+
+        // Here we convert from a .splat file buffer into a texture
+        // With a little bit more foresight perhaps this texture file
+        // should have been the native format as it'd be very easy to
+        // load it into webgl.
+        for (let i = 0; i < vertexCount; i++) {
+            // x, y, z
+            texdata_f[8 * i + 0] = f_buffer[8 * i + 0];
+            texdata_f[8 * i + 1] = f_buffer[8 * i + 1];
+            texdata_f[8 * i + 2] = f_buffer[8 * i + 2];
+
+            // r, g, b, a
+            texdata_c[4 * (8 * i + 7) + 0] = u_buffer[32 * i + 24 + 0];
+            texdata_c[4 * (8 * i + 7) + 1] = u_buffer[32 * i + 24 + 1];
+            texdata_c[4 * (8 * i + 7) + 2] = u_buffer[32 * i + 24 + 2];
+            texdata_c[4 * (8 * i + 7) + 3] = u_buffer[32 * i + 24 + 3];
+
+            // quaternions
+            let scale = [
+                f_buffer[8 * i + 3 + 0],
+                f_buffer[8 * i + 3 + 1],
+                f_buffer[8 * i + 3 + 2],
+            ];
+            let rot = [
+                (u_buffer[32 * i + 28 + 0] - 128) / 128,
+                (u_buffer[32 * i + 28 + 1] - 128) / 128,
+                (u_buffer[32 * i + 28 + 2] - 128) / 128,
+                (u_buffer[32 * i + 28 + 3] - 128) / 128,
+            ];
+
+            // Compute the matrix product of S and R (M = S * R)
+            const M = [
+                1.0 - 2.0 * (rot[2] * rot[2] + rot[3] * rot[3]),
+                2.0 * (rot[1] * rot[2] + rot[0] * rot[3]),
+                2.0 * (rot[1] * rot[3] - rot[0] * rot[2]),
+
+                2.0 * (rot[1] * rot[2] - rot[0] * rot[3]),
+                1.0 - 2.0 * (rot[1] * rot[1] + rot[3] * rot[3]),
+                2.0 * (rot[2] * rot[3] + rot[0] * rot[1]),
+
+                2.0 * (rot[1] * rot[3] + rot[0] * rot[2]),
+                2.0 * (rot[2] * rot[3] - rot[0] * rot[1]),
+                1.0 - 2.0 * (rot[1] * rot[1] + rot[2] * rot[2]),
+            ].map((k, i) => k * scale[Math.floor(i / 3)]);
+
+            const sigma = [
+                M[0] * M[0] + M[3] * M[3] + M[6] * M[6],
+                M[0] * M[1] + M[3] * M[4] + M[6] * M[7],
+                M[0] * M[2] + M[3] * M[5] + M[6] * M[8],
+                M[1] * M[1] + M[4] * M[4] + M[7] * M[7],
+                M[1] * M[2] + M[4] * M[5] + M[7] * M[8],
+                M[2] * M[2] + M[5] * M[5] + M[8] * M[8],
+            ];
+
+            texdata[8 * i + 4] = packHalf2x16(4 * sigma[0], 4 * sigma[1]);
+            texdata[8 * i + 5] = packHalf2x16(4 * sigma[2], 4 * sigma[3]);
+            texdata[8 * i + 6] = packHalf2x16(4 * sigma[4], 4 * sigma[5]);
+        }
+
+        self.postMessage({ texdata, texwidth, texheight }, [texdata.buffer]);
+    }
+
+    function runSort(viewProj) {
+        if (!buffer) return;
+        const f_buffer = new Float32Array(buffer);
+        if (lastVertexCount == vertexCount) {
+            let dot =
+                lastProj[2] * viewProj[2] +
+                lastProj[6] * viewProj[6] +
+                lastProj[10] * viewProj[10];
+            if (Math.abs(dot - 1) < 0.01) {
+                return;
+            }
+        } else {
+            generateTexture();
+            lastVertexCount = vertexCount;
+        }
+
+        console.time("sort");
+        let maxDepth = -Infinity;
+        let minDepth = Infinity;
+        let sizeList = new Int32Array(vertexCount);
+        for (let i = 0; i < vertexCount; i++) {
+            let depth =
+                ((viewProj[2] * f_buffer[8 * i + 0] +
+                    viewProj[6] * f_buffer[8 * i + 1] +
+                    viewProj[10] * f_buffer[8 * i + 2]) *
+                    4096) |
+                0;
+            sizeList[i] = depth;
+            if (depth > maxDepth) maxDepth = depth;
+            if (depth < minDepth) minDepth = depth;
+        }
+
+        // This is a 16 bit single-pass counting sort
+        let depthInv = (256 * 256 - 1) / (maxDepth - minDepth);
+        let counts0 = new Uint32Array(256 * 256);
+        for (let i = 0; i < vertexCount; i++) {
+            sizeList[i] = ((sizeList[i] - minDepth) * depthInv) | 0;
+            counts0[sizeList[i]]++;
+        }
+        let starts0 = new Uint32Array(256 * 256);
+        for (let i = 1; i < 256 * 256; i++)
+            starts0[i] = starts0[i - 1] + counts0[i - 1];
+        depthIndex = new Uint32Array(vertexCount);
+        for (let i = 0; i < vertexCount; i++)
+            depthIndex[starts0[sizeList[i]]++] = i;
+
+        console.timeEnd("sort");
+
+        lastProj = viewProj;
+        self.postMessage({ depthIndex, viewProj, vertexCount }, [
+            depthIndex.buffer,
+        ]);
+    }
+
+    function processPlyBuffer(inputBuffer) {
+        const ubuf = new Uint8Array(inputBuffer);
+        // 10KB ought to be enough for a header...
+        const header = new TextDecoder().decode(ubuf.slice(0, 1024 * 10));
+        const header_end = "end_header\n";
+        const header_end_index = header.indexOf(header_end);
+        if (header_end_index < 0)
+            throw new Error("Unable to read .ply file header");
+        const vertexCount = parseInt(/element vertex (\d+)\n/.exec(header)[1]);
+        console.log("Vertex Count", vertexCount);
+        let row_offset = 0,
+            offsets = {},
+            types = {};
+        const TYPE_MAP = {
+            double: "getFloat64",
+            int: "getInt32",
+            uint: "getUint32",
+            float: "getFloat32",
+            short: "getInt16",
+            ushort: "getUint16",
+            uchar: "getUint8",
+        };
+        for (let prop of header
+            .slice(0, header_end_index)
+            .split("\n")
+            .filter((k) => k.startsWith("property "))) {
+            const [p, type, name] = prop.split(" ");
+            const arrayType = TYPE_MAP[type] || "getInt8";
+            types[name] = arrayType;
+            offsets[name] = row_offset;
+            row_offset += parseInt(arrayType.replace(/[^\d]/g, "")) / 8;
+        }
+        console.log("Bytes per row", row_offset, types, offsets);
+
+        let dataView = new DataView(
+            inputBuffer,
+            header_end_index + header_end.length,
+        );
+        let row = 0;
+        const attrs = new Proxy(
+            {},
+            {
+                get(target, prop) {
+                    if (!types[prop]) throw new Error(prop + " not found");
+                    return dataView[types[prop]](
+                        row * row_offset + offsets[prop],
+                        true,
+                    );
+                },
+            },
+        );
+
+        console.time("calculate importance");
+        let sizeList = new Float32Array(vertexCount);
+        let sizeIndex = new Uint32Array(vertexCount);
+        for (row = 0; row < vertexCount; row++) {
+            sizeIndex[row] = row;
+            if (!types["scale_0"]) continue;
+            const size =
+                Math.exp(attrs.scale_0) *
+                Math.exp(attrs.scale_1) *
+                Math.exp(attrs.scale_2);
+            const opacity = 1 / (1 + Math.exp(-attrs.opacity));
+            sizeList[row] = size * opacity;
+        }
+        console.timeEnd("calculate importance");
+
+        console.time("sort");
+        sizeIndex.sort((b, a) => sizeList[a] - sizeList[b]);
+        console.timeEnd("sort");
+
+        // 6*4 + 4 + 4 = 8*4
+        // XYZ - Position (Float32)
+        // XYZ - Scale (Float32)
+        // RGBA - colors (uint8)
+        // IJKL - quaternion/rot (uint8)
+        const rowLength = 3 * 4 + 3 * 4 + 4 + 4;
+        const buffer = new ArrayBuffer(rowLength * vertexCount);
+
+        console.time("build buffer");
+        for (let j = 0; j < vertexCount; j++) {
+            row = sizeIndex[j];
+
+            const position = new Float32Array(buffer, j * rowLength, 3);
+            const scales = new Float32Array(buffer, j * rowLength + 4 * 3, 3);
+            const rgba = new Uint8ClampedArray(
+                buffer,
+                j * rowLength + 4 * 3 + 4 * 3,
+                4,
+            );
+            const rot = new Uint8ClampedArray(
+                buffer,
+                j * rowLength + 4 * 3 + 4 * 3 + 4,
+                4,
+            );
+
+            if (types["scale_0"]) {
+                const qlen = Math.sqrt(
+                    attrs.rot_0 ** 2 +
+                        attrs.rot_1 ** 2 +
+                        attrs.rot_2 ** 2 +
+                        attrs.rot_3 ** 2,
+                );
+
+                rot[0] = (attrs.rot_0 / qlen) * 128 + 128;
+                rot[1] = (attrs.rot_1 / qlen) * 128 + 128;
+                rot[2] = (attrs.rot_2 / qlen) * 128 + 128;
+                rot[3] = (attrs.rot_3 / qlen) * 128 + 128;
+
+                scales[0] = Math.exp(attrs.scale_0);
+                scales[1] = Math.exp(attrs.scale_1);
+                scales[2] = Math.exp(attrs.scale_2);
+            } else {
+                scales[0] = 0.01;
+                scales[1] = 0.01;
+                scales[2] = 0.01;
+
+                rot[0] = 255;
+                rot[1] = 0;
+                rot[2] = 0;
+                rot[3] = 0;
+            }
+
+            position[0] = attrs.x;
+            position[1] = attrs.y;
+            position[2] = attrs.z;
+
+            if (types["f_dc_0"]) {
+                const SH_C0 = 0.28209479177387814;
+                rgba[0] = (0.5 + SH_C0 * attrs.f_dc_0) * 255;
+                rgba[1] = (0.5 + SH_C0 * attrs.f_dc_1) * 255;
+                rgba[2] = (0.5 + SH_C0 * attrs.f_dc_2) * 255;
+            } else {
+                rgba[0] = attrs.red;
+                rgba[1] = attrs.green;
+                rgba[2] = attrs.blue;
+            }
+            if (types["opacity"]) {
+                rgba[3] = (1 / (1 + Math.exp(-attrs.opacity))) * 255;
+            } else {
+                rgba[3] = 255;
+            }
+        }
+        console.timeEnd("build buffer");
+        return buffer;
+    }
+
+    const throttledSort = () => {
+        if (!sortRunning) {
+            sortRunning = true;
+            let lastView = viewProj;
+            runSort(lastView);
+            setTimeout(() => {
+                sortRunning = false;
+                if (lastView !== viewProj) {
+                    throttledSort();
+                }
+            }, 0);
+        }
+    };
+
+    let sortRunning;
+    self.onmessage = (e) => {
+        if (e.data.ply) {
+            vertexCount = 0;
+            runSort(viewProj);
+            buffer = processPlyBuffer(e.data.ply);
+            vertexCount = Math.floor(buffer.byteLength / rowLength);
+            postMessage({ buffer: buffer, save: !!e.data.save });
+        } else if (e.data.buffer) {
+            buffer = e.data.buffer;
+            vertexCount = e.data.vertexCount;
+        } else if (e.data.vertexCount) {
+            vertexCount = e.data.vertexCount;
+        } else if (e.data.view) {
+            viewProj = e.data.view;
+            throttledSort();
+        }
+    };
+}
+
+const vertexShaderSource = "#version 300 es\nprecision highp float;\nprecision highp int;\n\nuniform highp usampler2D u_texture;\nuniform mat4 projection, view;\nuniform vec2 focal;\nuniform vec2 viewport;\n\nin vec2 position;\nin int index;\n\nout vec4 vColor;\nout vec2 vPosition;\n\nvoid main () {\n    uvec4 cen = texelFetch(u_texture, ivec2((uint(index) & 0x3ffu) << 1, uint(index) >> 10), 0);\n    vec4 cam = view * vec4(uintBitsToFloat(cen.xyz), 1);\n    vec4 pos2d = projection * cam;\n\n    float clip = 1.2 * pos2d.w;\n    if (pos2d.z < -clip || pos2d.x < -clip || pos2d.x > clip || pos2d.y < -clip || pos2d.y > clip) {\n        gl_Position = vec4(0.0, 0.0, 2.0, 1.0);\n        return;\n    }\n\n    uvec4 cov = texelFetch(u_texture, ivec2(((uint(index) & 0x3ffu) << 1) | 1u, uint(index) >> 10), 0);\n    vec2 u1 = unpackHalf2x16(cov.x), u2 = unpackHalf2x16(cov.y), u3 = unpackHalf2x16(cov.z);\n    mat3 Vrk = mat3(u1.x, u1.y, u2.x, u1.y, u2.y, u3.x, u2.x, u3.x, u3.y);\n\n    mat3 J = mat3(\n        focal.x / cam.z, 0., -(focal.x * cam.x) / (cam.z * cam.z),\n        0., -focal.y / cam.z, (focal.y * cam.y) / (cam.z * cam.z),\n        0., 0., 0.\n    );\n\n    mat3 T = transpose(mat3(view)) * J;\n    mat3 cov2d = transpose(T) * Vrk * T;\n\n    float mid = (cov2d[0][0] + cov2d[1][1]) / 2.0;\n    float radius = length(vec2((cov2d[0][0] - cov2d[1][1]) / 2.0, cov2d[0][1]));\n    float lambda1 = mid + radius, lambda2 = mid - radius;\n\n    if(lambda2 < 0.0) return;\n    vec2 diagonalVector = normalize(vec2(cov2d[0][1], lambda1 - cov2d[0][0]));\n    vec2 majorAxis = min(sqrt(2.0 * lambda1), 1024.0) * diagonalVector;\n    vec2 minorAxis = min(sqrt(2.0 * lambda2), 1024.0) * vec2(diagonalVector.y, -diagonalVector.x);\n\n    vColor = clamp(pos2d.z/pos2d.w+1.0, 0.0, 1.0) * vec4((cov.w) & 0xffu, (cov.w >> 8) & 0xffu, (cov.w >> 16) & 0xffu, (cov.w >> 24) & 0xffu) / 255.0;\n    vPosition = position;\n\n    vec2 vCenter = vec2(pos2d) / pos2d.w;\n    gl_Position = vec4(\n        vCenter\n        + position.x * majorAxis / viewport\n        + position.y * minorAxis / viewport, 0.0, 1.0);\n\n}";
+const fragmentShaderSource = "#version 300 es\nprecision highp float;\n\nin vec4 vColor;\nin vec2 vPosition;\n\nout vec4 fragColor;\n\nvoid main () {\n    float A = -dot(vPosition, vPosition);\n    if (A < -4.0) discard;\n    float B = exp(A) * vColor.a;\n    fragColor = vec4(B * vColor.rgb, B);\n}";
+
+var TS = { on: false, glReady: false, failed: false, vertexCount: 0, hasBuffer: false };
+window.TrueSplat = TS;
+var canvas=null, gl=null, program=null, worker=null, texture=null, indexBuffer=null;
+var u_projection=null, u_viewport=null, u_focal=null, u_view=null;
+var _groundRefs=null, _wgSeen=null;
+
+function tsNote(msg){
+  var el = document.getElementById('tsRendNote');
+  if (el) el.textContent = msg;
+  if (window.console) console.log('[TrueSplat]', msg);
+}
+TS.note = tsNote;
+
+function tsInitGL(){
+  if (TS.glReady || TS.failed) return TS.glReady;
+  try {
+    canvas = document.createElement('canvas');
+    canvas.id = 'trueSplatCanvas';
+    canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:none;pointer-events:none;z-index:3;';
+    document.getElementById('viewport').appendChild(canvas);
+    gl = canvas.getContext('webgl2', { antialias:false, alpha:true, preserveDrawingBuffer:false });
+    if (!gl) { TS.failed = true; tsNote('WebGL2 unavailable - staying on Points'); return false; }
+    var vsh = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vsh, vertexShaderSource); gl.compileShader(vsh);
+    if (!gl.getShaderParameter(vsh, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(vsh));
+    var fsh = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fsh, fragmentShaderSource); gl.compileShader(fsh);
+    if (!gl.getShaderParameter(fsh, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(fsh));
+    program = gl.createProgram();
+    gl.attachShader(program, vsh); gl.attachShader(program, fsh);
+    gl.linkProgram(program); gl.useProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(program));
+    gl.disable(gl.DEPTH_TEST);
+    gl.enable(gl.BLEND);
+    gl.blendFuncSeparate(gl.ONE_MINUS_DST_ALPHA, gl.ONE, gl.ONE_MINUS_DST_ALPHA, gl.ONE);
+    gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD);
+    u_projection = gl.getUniformLocation(program, 'projection');
+    u_viewport = gl.getUniformLocation(program, 'viewport');
+    u_focal = gl.getUniformLocation(program, 'focal');
+    u_view = gl.getUniformLocation(program, 'view');
+    var triangleVertices = new Float32Array([-2,-2, 2,-2, 2,2, -2,2]);
+    var vertexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, triangleVertices, gl.STATIC_DRAW);
+    var a_position = gl.getAttribLocation(program, 'position');
+    gl.enableVertexAttribArray(a_position);
+    gl.vertexAttribPointer(a_position, 2, gl.FLOAT, false, 0, 0);
+    texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.uniform1i(gl.getUniformLocation(program, 'u_texture'), 0);
+    indexBuffer = gl.createBuffer();
+    var a_index = gl.getAttribLocation(program, 'index');
+    gl.enableVertexAttribArray(a_index);
+    gl.bindBuffer(gl.ARRAY_BUFFER, indexBuffer);
+    gl.vertexAttribIPointer(a_index, 1, gl.INT, false, 0, 0);
+    gl.vertexAttribDivisor(a_index, 1);
+    TS.glReady = true;
+    return true;
+  } catch(e) { TS.failed = true; console.error(e); tsNote('True renderer failed to start - staying on Points'); return false; }
+}
+
+function tsNewWorker(){
+  if (worker) { try { worker.terminate(); } catch(e){} }
+  worker = new Worker(URL.createObjectURL(new Blob(['(', createWorker.toString(), ')(self)'], { type:'application/javascript' })));
+  worker.onmessage = function(e){
+    if (e.data.texdata) {
+      var td = e.data;
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32UI, td.texwidth, td.texheight, 0, gl.RGBA_INTEGER, gl.UNSIGNED_INT, td.texdata);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+    } else if (e.data.depthIndex) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, indexBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, e.data.depthIndex, gl.DYNAMIC_DRAW);
+      TS.vertexCount = e.data.vertexCount;
+      tsNote('TRUE splats - ' + TS.vertexCount.toLocaleString() + ' gaussians');
+    }
+  };
+}
+
+TS.setData = function(buf, flip){
+  if (!TS.on || TS.failed) return;
+  if (!tsInitGL()) return;
+  var count = Math.floor(buf.byteLength / 32);
+  if (count < 10) return;
+  var copy = buf.slice(0);
+  var f32 = new Float32Array(copy);
+  var cx, cz, minY;
+  var fixed = (typeof WILLA_CFG !== 'undefined' && WILLA_CFG.fixed) ? WILLA_CFG.fixed : null;
+  if (flip && fixed) { cx = fixed[0]; cz = fixed[2]; minY = fixed[1]; }
+  else {
+    minY = Infinity; var sx = 0, sz = 0;
+    for (var i = 0; i < count; i++) { var y = f32[8*i+1]; if (y < minY) minY = y; }
+    for (var j = 0; j < count; j += 9) { sx += f32[8*j]; sz += f32[8*j+2]; }
+    var n9 = Math.ceil(count / 9); cx = sx / n9; cz = sz / n9;
+  }
+  for (var k = 0; k < count; k++) { f32[8*k] -= cx; f32[8*k+1] -= minY; f32[8*k+2] -= cz; }
+  TS.vertexCount = 0;
+  TS.hasBuffer = true;
+  tsNewWorker();
+  worker.postMessage({ buffer: copy, vertexCount: count }, [copy]);
+  tsNote('packing true splats (' + count.toLocaleString() + ' gaussians)...');
+};
+
+function tsGroundRefs(){
+  if (typeof worldGroup === 'undefined' || !worldGroup) return [];
+  if (_wgSeen !== worldGroup) {
+    _wgSeen = worldGroup; _groundRefs = [];
+    worldGroup.traverse(function(o){
+      if (o.isMesh && o.geometry && o.geometry.type === 'PlaneGeometry' && o.geometry.parameters && o.geometry.parameters.width === 1400) _groundRefs.push(o);
+      else if (o.isLineSegments && o.geometry && o.geometry.attributes && o.geometry.attributes.color && o.geometry.attributes.position && o.geometry.attributes.position.count > 200) _groundRefs.push(o);
+    });
+  }
+  return _groundRefs;
+}
+function tsSetGroundVisible(v){
+  var refs = tsGroundRefs();
+  for (var i = 0; i < refs.length; i++) refs[i].visible = v;
+}
+
+TS.setMode = function(on){
+  TS.on = !!on;
+  try { localStorage.setItem('onthe1.fork.renderer', TS.on ? 'true' : 'points'); } catch(e){}
+  var bT = document.getElementById('tsRendTrue'), bP = document.getElementById('tsRendPoints');
+  if (bT && bP) { bT.style.fontWeight = TS.on ? 'bold' : 'normal'; bP.style.fontWeight = TS.on ? 'normal' : 'bold'; }
+  if (!TS.on) {
+    if (canvas) canvas.style.display = 'none';
+    if (typeof splatObj !== 'undefined' && splatObj) splatObj.visible = true;
+    tsSetGroundVisible(true);
+    tsNote('Points renderer');
+  } else {
+    tsNote('True splats armed - packing on load');
+    if (window._tsBuf && !TS.hasBuffer) TS.setData(window._tsBuf, window._tsFlip);
+  }
+};
+
+function tsFrame(){
+  requestAnimationFrame(tsFrame);
+  if (!TS.on || !TS.glReady || !canvas) return;
+  var haveScene = TS.hasBuffer && typeof splatObj !== 'undefined' && splatObj && typeof camera !== 'undefined' && camera && typeof renderer !== 'undefined' && renderer;
+  if (!haveScene) { canvas.style.display = 'none'; return; }
+  var rc = renderer.domElement;
+  if (canvas.width !== rc.width || canvas.height !== rc.height) {
+    canvas.width = rc.width; canvas.height = rc.height;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+  }
+  camera.updateMatrixWorld();
+  splatObj.updateWorldMatrix(true, false);
+  var V = invert4(Array.prototype.slice.call(camera.matrixWorld.elements));
+  var view = multiply4(V, Array.prototype.slice.call(splatObj.matrixWorld.elements));
+  var proj = Array.prototype.slice.call(camera.projectionMatrix.elements);
+  var viewProj = multiply4(proj, view);
+  worker.postMessage({ view: viewProj });
+  var active = TS.vertexCount > 0;
+  canvas.style.display = active ? 'block' : 'none';
+  if (!active) return;
+  if (splatObj.visible) splatObj.visible = false;
+  tsSetGroundVisible(false);
+  gl.useProgram(program);
+  gl.uniformMatrix4fv(u_projection, false, proj);
+  gl.uniform2fv(u_viewport, new Float32Array([canvas.width, canvas.height]));
+  gl.uniform2fv(u_focal, new Float32Array([proj[0] * canvas.width / 2, proj[5] * canvas.height / 2]));
+  gl.uniformMatrix4fv(u_view, false, view);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, 4, TS.vertexCount);
+}
+requestAnimationFrame(tsFrame);
+
+/* Stash every .splat buffer the game loads, and feed the true renderer. */
+var _origLoadSplatBuffer = loadSplatBuffer;
+loadSplatBuffer = function(buf, name){
+  if (!/\.ply$/i.test(name)) {
+    window._tsBuf = buf; window._tsName = name;
+    window._tsFlip = /^richie\.splat$/i.test(name) || (typeof willaSource !== 'undefined' && willaSource === 'bundled copy');
+    TS.hasBuffer = false;
+    if (TS.on) TS.setData(buf, window._tsFlip);
+  }
+  return _origLoadSplatBuffer(buf, name);
+};
+
+/* Default: true splats unless the URL or a saved choice says points. */
+var _rendParam = new URLSearchParams(location.search).get('renderer');
+var _saved = null;
+try { _saved = localStorage.getItem('onthe1.fork.renderer'); } catch(e){}
+TS.setMode(_rendParam ? _rendParam !== 'points' : (_saved ? _saved === 'true' : true));
+})();
+</script>
+
 <script>
 (function(){
  var d=document.createElement('div');
  d.style.cssText='position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:99999;background:rgba(10,12,20,.82);color:#e8e6df;font:13px/1.45 system-ui,sans-serif;padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.25);text-align:center;max-width:92vw';
  var cur=(function(){var m=new URLSearchParams(location.search).get('model'); return (m==='old'||m==='lite'||m==='v3'||m==='v3lite')?m:'new';})();
  function btn(m,t){return '<a href="?model='+m+'" style="display:inline-block;margin:0 4px;padding:3px 10px;border-radius:6px;text-decoration:none;color:#fff;background:'+(cur===m?'#7a5c14':'#2a3040')+';border:1px solid rgba(255,255,255,.35)">'+t+'</a>';}
- d.innerHTML='<b>TEST FORK</b> &middot; visuals only, no collision &middot; showing: <b>'+(cur==='old'?'OLD Nov 21 (760k)':cur==='lite'?'NEW LITE native (500k)':cur==='v3'?'V3 TILED (2.39M)':cur==='v3lite'?'V3 TILED LITE (500k)':'NEW native (1.43M)')+'</b><br>'+btn('new','New full')+btn('lite','New lite')+btn('v3','V3 full')+btn('v3lite','V3 lite')+btn('old','Old splat')+'<a href="/flight/" style="display:inline-block;margin:0 4px;padding:3px 10px;border-radius:6px;text-decoration:none;color:#fff;background:#20301e;border:1px solid rgba(255,255,255,.35)">Live /flight/</a>';
+ d.innerHTML='<b>TEST FORK</b> &middot; visuals only, no collision &middot; showing: <b>'+(cur==='old'?'OLD Nov 21 (760k)':cur==='lite'?'NEW LITE native (500k)':cur==='v3'?'V3 TILED (2.39M)':cur==='v3lite'?'V3 TILED LITE (500k)':'NEW native (1.43M)')+'</b><br>'+btn('new','New full')+btn('lite','New lite')+btn('v3','V3 full')+btn('v3lite','V3 lite')+btn('old','Old splat')+'<a href="?model='+cur+'&renderer=true" id="tsRendTrue" style="display:inline-block;margin:0 4px;padding:3px 10px;border-radius:6px;text-decoration:none;color:#fff;background:#2a3040;border:1px solid rgba(255,255,255,.35)">True splats</a>'+'<a href="?model='+cur+'&renderer=points" id="tsRendPoints" style="display:inline-block;margin:0 4px;padding:3px 10px;border-radius:6px;text-decoration:none;color:#fff;background:#2a3040;border:1px solid rgba(255,255,255,.35)">Points</a>'+'<span id="tsRendNote" style="margin-left:6px;opacity:.8"></span>' +'<a href="/flight/" style="display:inline-block;margin:0 4px;padding:3px 10px;border-radius:6px;text-decoration:none;color:#fff;background:#20301e;border:1px solid rgba(255,255,255,.35)">Live /flight/</a>';
  document.body.appendChild(d);
 })();
 </script>
